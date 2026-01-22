@@ -12,5 +12,5 @@ export const calculateDuration = (startDate: string, startTime: string, endDate:
 export const formatDuration = (minutes: number): string => {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return `${h}h ${m.toString().padStart(2, '0')}m`;
+  return `${h}:${m.toString().padStart(2, '0')}`;
 };

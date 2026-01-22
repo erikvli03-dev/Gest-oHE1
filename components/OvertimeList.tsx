@@ -42,6 +42,34 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
 
   const totalMinutes = filteredRecords.reduce((acc, curr) => acc + curr.durationMinutes, 0);
 
+  const handleExportExcel = () => {
+    const headers = ["Colaborador", "Supervisor", "Local", "Inicio", "Fim", "Duracao (min)", "Motivo", "Status"];
+    const rows = filteredRecords.map(r => [
+      r.employee,
+      r.supervisor,
+      r.location,
+      `${r.startDate} ${r.startTime}`,
+      `${r.endDate} ${r.endTime}`,
+      r.durationMinutes,
+      `"${r.reason.replace(/"/g, '""')}"`, // Escapar aspas para CSV
+      r.status
+    ]);
+
+    const csvContent = [
+      headers.join(";"),
+      ...rows.map(e => e.join(";"))
+    ].join("\n");
+
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `relatorio_horas_extras_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const canModify = (record: OvertimeRecord) => {
     if (currentUser.role === 'COORDINATOR') return true;
     if (currentUser.role === 'SUPERVISOR' && record.supervisor === currentUser.name) return true;
@@ -71,16 +99,27 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
             </p>
           </div>
           
-          <select 
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
-            className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 outline-none"
-          >
-            <option value="ALL">Todos os Status</option>
-            <option value="PENDING">Pendentes</option>
-            <option value="APPROVED">Aprovados</option>
-            <option value="REJECTED">Recusados</option>
-          </select>
+          <div className="flex gap-2">
+            {(currentUser.role === 'COORDINATOR' || currentUser.role === 'SUPERVISOR') && (
+              <button 
+                onClick={handleExportExcel}
+                className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-xl px-3 py-2 hover:bg-emerald-100 transition-colors flex items-center gap-2"
+              >
+                <i className="fa-solid fa-file-excel"></i>
+                Exportar Excel
+              </button>
+            )}
+            <select 
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 outline-none"
+            >
+              <option value="ALL">Todos os Status</option>
+              <option value="PENDING">Pendentes</option>
+              <option value="APPROVED">Aprovados</option>
+              <option value="REJECTED">Recusados</option>
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -117,7 +156,6 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
                 </div>
                 
                 <div className="flex gap-2">
-                  {/* Approval Actions for Supervisors/Coordinator */}
                   {(currentUser.role === 'COORDINATOR' || currentUser.role === 'SUPERVISOR') && record.status === 'PENDING' && (
                     <>
                       <button 

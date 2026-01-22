@@ -1,18 +1,14 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { OvertimeRecord } from '../types';
 import { formatDuration } from '../utils/timeUtils';
-import { analyzeOvertimeTrends } from '../services/geminiService';
 
 interface DashboardStatsProps {
   records: OvertimeRecord[];
 }
 
 const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
-
   // Stats logic
   const stats = {
     total: records.length,
@@ -37,7 +33,8 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
   const supervisorData = Object.keys(supervisorHoursMap).map(name => ({
     name,
     totalMinutes: supervisorHoursMap[name],
-    hours: parseFloat((supervisorHoursMap[name] / 60).toFixed(2))
+    // Mantemos o valor numérico para a altura da barra, mas formatamos a exibição
+    hoursDecimal: parseFloat((supervisorHoursMap[name] / 60).toFixed(2))
   }));
 
   const statusPieData = Object.keys(statusDataMap).map(name => ({
@@ -47,11 +44,10 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
 
   const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f97316'];
 
-  const handleAIAnalysis = async () => {
-    setIsAnalyzing(true);
-    const result = await analyzeOvertimeTrends(records);
-    setAiInsight(result);
-    setIsAnalyzing(false);
+  // Formatador para o Tooltip do gráfico de barras
+  const formatTooltipValue = (value: number, name: string, props: any) => {
+    const minutes = props.payload.totalMinutes;
+    return [formatDuration(minutes), "Total de Horas"];
   };
 
   return (
@@ -86,8 +82,12 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-                <Tooltip cursor={{fill: '#f8fafc'}} />
-                <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Tooltip 
+                  cursor={{fill: '#f8fafc'}} 
+                  formatter={formatTooltipValue}
+                  labelStyle={{ fontWeight: 'bold', fontSize: '12px' }}
+                />
+                <Bar dataKey="hoursDecimal" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -114,38 +114,6 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
-      </div>
-
-      {/* AI Intelligence Panel */}
-      <div className="bg-indigo-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-        <div className="relative z-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-xl">
-                <i className="fa-solid fa-microchip"></i>
-              </div>
-              <div>
-                <h3 className="font-bold text-xl">Análise de Gestão (IA)</h3>
-                <p className="text-indigo-200 text-xs">Identificação automática de gargalos e motivos recorrentes</p>
-              </div>
-            </div>
-            <button
-              onClick={handleAIAnalysis}
-              disabled={isAnalyzing || records.length === 0}
-              className="bg-white text-indigo-700 px-6 py-3 rounded-2xl font-bold text-sm hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
-            >
-              {isAnalyzing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-bolt"></i>}
-              {isAnalyzing ? 'Processando Dados...' : 'Gerar Insights'}
-            </button>
-          </div>
-
-          {aiInsight && (
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-              {aiInsight}
-            </div>
-          )}
         </div>
       </div>
     </div>
