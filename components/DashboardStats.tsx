@@ -1,104 +1,151 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { OvertimeRecord } from '../types';
 import { formatDuration } from '../utils/timeUtils';
+import { analyzeOvertimeTrends } from '../services/geminiService';
 
 interface DashboardStatsProps {
   records: OvertimeRecord[];
 }
 
 const DashboardStats: React.FC<DashboardStatsProps> = ({ records }) => {
-  // Horas totais por Supervisor
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+
+  // Stats logic
+  const stats = {
+    total: records.length,
+    pending: records.filter(r => r.status === 'PENDING').length,
+    approved: records.filter(r => r.status === 'APPROVED').length,
+    totalMinutes: records.reduce((acc, r) => acc + (r.status === 'APPROVED' ? r.durationMinutes : 0), 0)
+  };
+
   const supervisorHoursMap: { [key: string]: number } = {};
-  // Registros por Localidade
-  const locationDataMap: { [key: string]: number } = { 'Guarujá': 0, 'Santos': 0 };
+  const statusDataMap = {
+    'Pendentes': records.filter(r => r.status === 'PENDING').length,
+    'Aprovados': records.filter(r => r.status === 'APPROVED').length,
+    'Recusados': records.filter(r => r.status === 'REJECTED').length,
+  };
 
   records.forEach(r => {
-    // Soma minutos e depois converte para horas decimais no gráfico
-    supervisorHoursMap[r.supervisor] = (supervisorHoursMap[r.supervisor] || 0) + r.durationMinutes;
-    locationDataMap[r.location] = (locationDataMap[r.location] || 0) + 1;
+    if (r.status === 'APPROVED') {
+      supervisorHoursMap[r.supervisor] = (supervisorHoursMap[r.supervisor] || 0) + r.durationMinutes;
+    }
   });
 
   const supervisorData = Object.keys(supervisorHoursMap).map(name => ({
     name,
     totalMinutes: supervisorHoursMap[name],
-    // Horas decimais para o gráfico (ex: 1h30m = 1.5)
     hours: parseFloat((supervisorHoursMap[name] / 60).toFixed(2))
   }));
 
-  const locationData = Object.keys(locationDataMap).map(name => ({
+  const statusPieData = Object.keys(statusDataMap).map(name => ({
     name,
-    value: locationDataMap[name]
-  }));
+    value: statusDataMap[name as keyof typeof statusDataMap]
+  })).filter(d => d.value > 0);
 
-  const COLORS = ['#3b82f6', '#f97316', '#10b981', '#ef4444', '#8b5cf6'];
+  const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f97316'];
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white p-3 border border-slate-200 shadow-xl rounded-lg text-xs">
-          <p className="font-bold text-slate-800 mb-1">{payload[0].payload.name}</p>
-          <p className="text-blue-600 font-bold">Total: {formatDuration(payload[0].payload.totalMinutes)}</p>
-        </div>
-      );
-    }
-    return null;
+  const handleAIAnalysis = async () => {
+    setIsAnalyzing(true);
+    const result = await analyzeOvertimeTrends(records);
+    setAiInsight(result);
+    setIsAnalyzing(false);
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Horas Totais por Supervisor</h3>
-          <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold">EM HORAS</span>
+    <div className="space-y-6 mb-8">
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Lançado</p>
+          <p className="text-xl font-black text-slate-800">{stats.total}</p>
         </div>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={supervisorData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="hours" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40}>
-                {supervisorData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-l-4 border-l-blue-500">
+          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Aguardando</p>
+          <p className="text-xl font-black text-blue-600">{stats.pending}</p>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500">
+          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Aprovados</p>
+          <p className="text-xl font-black text-emerald-600">{stats.approved}</p>
+        </div>
+        <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Horas Pagas</p>
+          <p className="text-lg font-black text-white">{formatDuration(stats.totalMinutes)}</p>
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6">Distribuição de Chamados</h3>
-        <div className="h-64 flex">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={locationData}
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {locationData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex flex-col justify-center gap-4 pr-4">
-            {locationData.map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                <span className="text-xs text-slate-600 font-bold">{entry.name}: {entry.value}</span>
-              </div>
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Gráfico de Barras - Horas por Supervisor */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-6">Horas Aprovadas por Supervisor</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={supervisorData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+                <Tooltip cursor={{fill: '#f8fafc'}} />
+                <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* Gráfico de Pizza - Status */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-6">Status de Aprovação</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={statusPieData}
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {statusPieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Intelligence Panel */}
+      <div className="bg-indigo-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+        <div className="relative z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-xl">
+                <i className="fa-solid fa-microchip"></i>
+              </div>
+              <div>
+                <h3 className="font-bold text-xl">Análise de Gestão (IA)</h3>
+                <p className="text-indigo-200 text-xs">Identificação automática de gargalos e motivos recorrentes</p>
+              </div>
+            </div>
+            <button
+              onClick={handleAIAnalysis}
+              disabled={isAnalyzing || records.length === 0}
+              className="bg-white text-indigo-700 px-6 py-3 rounded-2xl font-bold text-sm hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {isAnalyzing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-bolt"></i>}
+              {isAnalyzing ? 'Processando Dados...' : 'Gerar Insights'}
+            </button>
+          </div>
+
+          {aiInsight && (
+            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 text-sm leading-relaxed whitespace-pre-wrap font-medium">
+              {aiInsight}
+            </div>
+          )}
         </div>
       </div>
     </div>

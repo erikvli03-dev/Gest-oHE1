@@ -6,9 +6,11 @@ export enum Location {
 
 export type UserRole = 'COORDINATOR' | 'SUPERVISOR' | 'EMPLOYEE';
 
+export type OvertimeStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export interface User {
   username: string;
-  password?: string; // Para o sistema de login
+  password?: string;
   name: string;
   role: UserRole;
   supervisorName?: string;
@@ -27,7 +29,8 @@ export interface OvertimeRecord {
   reason: string;
   durationMinutes: number;
   createdAt: number;
-  ownerUsername: string; // Para garantir que o colaborador só veja o que ele criou
+  ownerUsername: string;
+  status: OvertimeStatus; // Novo campo
 }
 
 export interface HierarchyData {

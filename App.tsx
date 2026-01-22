@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { OvertimeRecord, User } from './types';
+import { OvertimeRecord, User, OvertimeStatus } from './types';
 import OvertimeForm from './components/OvertimeForm';
 import OvertimeList from './components/OvertimeList';
 import DashboardStats from './components/DashboardStats';
@@ -10,7 +10,7 @@ import { calculateDuration } from './utils/timeUtils';
 
 const App: React.FC = () => {
   const [records, setRecords] = useState<OvertimeRecord[]>(() => {
-    const saved = localStorage.getItem('overtime_records_v2');
+    const saved = localStorage.getItem('overtime_records_v3');
     try {
       return saved ? JSON.parse(saved) : [];
     } catch {
@@ -32,10 +32,9 @@ const App: React.FC = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('overtime_records_v2', JSON.stringify(records));
+    localStorage.setItem('overtime_records_v3', JSON.stringify(records));
   }, [records]);
 
-  // Reset do estado de confirmação de logout ao fechar/mudar de tela
   useEffect(() => {
     if (isLoggingOut) {
       const timer = setTimeout(() => setIsLoggingOut(false), 3000);
@@ -48,22 +47,15 @@ const App: React.FC = () => {
     setUser(u);
   };
 
-  // FUNÇÃO SAIR DEFINITIVA: Sem window.confirm para evitar bloqueios
   const executeLogout = (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    
-    // Limpeza total
     sessionStorage.removeItem('logged_user');
-    sessionStorage.clear();
-    
-    // Reset de estados
     setEditingRecord(null);
     setIsLoggingOut(false);
     setUser(null); 
   };
 
-  const handleAddRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername'>) => {
+  const handleAddRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
     if (!user) return;
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
     
@@ -72,23 +64,25 @@ const App: React.FC = () => {
       id: `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       createdAt: Date.now(),
       durationMinutes: duration,
-      ownerUsername: user.username
+      ownerUsername: user.username,
+      status: 'PENDING' // Default
     };
     
     setRecords(prev => [newRecord, ...prev]);
-    alert('✅ Registro salvo com sucesso!');
   };
 
-  const handleUpdateRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername'>) => {
+  const handleUpdateRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
     if (!editingRecord) return;
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
     setRecords(prev => prev.map(r => r.id === editingRecord.id ? { ...r, ...data, durationMinutes: duration } : r));
     setEditingRecord(null);
-    alert('✅ Registro atualizado!');
+  };
+
+  const handleUpdateStatus = (id: string, newStatus: OvertimeStatus) => {
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
   };
 
   const handleDeleteRecord = (id: string) => {
-    // Agora a confirmação já foi feita visualmente no componente OvertimeList
     setRecords(prev => prev.filter(r => r.id !== id));
     if (editingRecord?.id === id) setEditingRecord(null);
   };
@@ -101,17 +95,9 @@ const App: React.FC = () => {
   const handleUpdateUser = (updatedUser: User) => {
     setUser(updatedUser);
     sessionStorage.setItem('logged_user', JSON.stringify(updatedUser));
-    const users: User[] = JSON.parse(localStorage.getItem('app_users') || '[]');
-    const idx = users.findIndex(u => u.username === updatedUser.username);
-    if (idx !== -1) {
-      users[idx] = updatedUser;
-      localStorage.setItem('app_users', JSON.stringify(users));
-    }
   };
 
-  if (!user) {
-    return <AuthSystem onLogin={handleLogin} />;
-  }
+  if (!user) return <AuthSystem onLogin={handleLogin} />;
 
   const dashboardRecords = records.filter(r => {
     if (user.role === 'COORDINATOR') return true;
@@ -124,7 +110,7 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 mb-8 sticky top-0 z-[100] shadow-xl border-b border-slate-800">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
               <i className="fa-solid fa-business-time text-white text-lg"></i>
             </div>
             <div className="hidden xs:block">
@@ -137,32 +123,27 @@ const App: React.FC = () => {
           
           <div className="flex items-center gap-2">
             <button 
-              type="button"
               onClick={() => setIsPasswordModalOpen(true)}
-              className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2.5 rounded-xl border border-slate-700 transition-all flex items-center gap-2 font-bold cursor-pointer"
+              className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2.5 rounded-xl border border-slate-700 transition-all font-bold"
             >
-              <i className="fa-solid fa-key pointer-events-none"></i>
-              <span className="hidden sm:inline pointer-events-none">Senha</span>
+              <i className="fa-solid fa-key mr-2"></i>
+              <span className="hidden sm:inline">Senha</span>
             </button>
 
-            {/* BOTÃO SAIR COM CONFIRMAÇÃO EM DOIS ESTÁGIOS */}
             {!isLoggingOut ? (
               <button 
-                type="button"
                 onClick={() => setIsLoggingOut(true)} 
-                className="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl border border-slate-700 transition-all flex items-center gap-2 font-bold text-white cursor-pointer active:scale-95"
+                className="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl border border-slate-700 transition-all font-bold"
               >
-                <i className="fa-solid fa-right-from-bracket pointer-events-none"></i>
+                <i className="fa-solid fa-right-from-bracket mr-2"></i>
                 <span>Sair</span>
               </button>
             ) : (
               <button 
-                type="button"
                 onClick={executeLogout} 
-                className="text-xs bg-red-600 hover:bg-red-700 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 font-black text-white shadow-lg shadow-red-500/30 active:scale-95 animate-pulse cursor-pointer border-none"
+                className="text-xs bg-red-600 hover:bg-red-700 px-4 py-2.5 rounded-xl transition-all font-black text-white shadow-lg animate-pulse"
               >
-                <i className="fa-solid fa-circle-check pointer-events-none"></i>
-                <span>Confirmar?</span>
+                Confirmar?
               </button>
             )}
           </div>
@@ -179,7 +160,7 @@ const App: React.FC = () => {
 
       <main className="container mx-auto px-4 max-w-6xl">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5 space-y-6">
+          <div className="lg:col-span-4 space-y-6">
             <div className="lg:sticky lg:top-24">
               <OvertimeForm 
                 key={editingRecord ? `edit-${editingRecord.id}` : 'new-form'}
@@ -191,7 +172,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="lg:col-span-7 space-y-8">
+          <div className="lg:col-span-8 space-y-8">
             {(user.role === 'COORDINATOR' || user.role === 'SUPERVISOR') && (
               <DashboardStats records={dashboardRecords} />
             )}
@@ -199,6 +180,7 @@ const App: React.FC = () => {
               records={records} 
               onDelete={handleDeleteRecord} 
               onEdit={handleEditRequest}
+              onUpdateStatus={handleUpdateStatus}
               currentUser={user}
             />
           </div>

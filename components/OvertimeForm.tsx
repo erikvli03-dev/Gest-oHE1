@@ -4,7 +4,8 @@ import { OvertimeRecord, Location, User } from '../types';
 import { COORDINATOR_NAME, SUPERVISORS, EMPLOYEE_HIERARCHY } from '../constants';
 
 interface OvertimeFormProps {
-  onSubmit: (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername'>) => void;
+  // Fix: Omit 'status' from the expected data in onSubmit as it is handled at the app level (App.tsx)
+  onSubmit: (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => void;
   initialData?: OvertimeRecord;
   onCancel?: () => void;
   currentUser: User;
