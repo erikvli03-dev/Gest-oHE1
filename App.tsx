@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { OvertimeRecord, User, OvertimeStatus } from './types';
 import OvertimeForm from './components/OvertimeForm';
 import OvertimeList from './components/OvertimeList';
@@ -7,17 +7,10 @@ import DashboardStats from './components/DashboardStats';
 import AuthSystem from './components/AuthSystem';
 import PasswordModal from './components/PasswordModal';
 import { calculateDuration } from './utils/timeUtils';
+import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const [records, setRecords] = useState<OvertimeRecord[]>(() => {
-    const saved = localStorage.getItem('overtime_records_v3');
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
+  const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
     const saved = sessionStorage.getItem('logged_user');
     try {
@@ -27,13 +20,41 @@ const App: React.FC = () => {
     }
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // Carregamento inicial (Nuvem + Cache Local)
   useEffect(() => {
-    localStorage.setItem('overtime_records_v3', JSON.stringify(records));
-  }, [records]);
+    const loadData = async () => {
+      setIsLoading(true);
+      
+      // Tenta carregar do cache local primeiro para velocidade
+      const local = localStorage.getItem('overtime_records_cache');
+      if (local) setRecords(JSON.parse(local));
+
+      // Busca dados frescos da nuvem
+      const cloudRecords = await SyncService.getRecords();
+      if (cloudRecords.length > 0) {
+        setRecords(cloudRecords);
+        localStorage.setItem('overtime_records_cache', JSON.stringify(cloudRecords));
+      }
+      setIsLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  // Função para salvar dados globalmente
+  const syncRecords = useCallback(async (newRecords: OvertimeRecord[]) => {
+    setRecords(newRecords);
+    localStorage.setItem('overtime_records_cache', JSON.stringify(newRecords));
+    setIsSyncing(true);
+    await SyncService.saveRecords(newRecords);
+    setIsSyncing(false);
+  }, []);
 
   useEffect(() => {
     if (isLoggingOut) {
@@ -55,7 +76,7 @@ const App: React.FC = () => {
     setUser(null); 
   };
 
-  const handleAddRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
+  const handleAddRecord = async (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
     if (!user) return;
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
     
@@ -65,25 +86,28 @@ const App: React.FC = () => {
       createdAt: Date.now(),
       durationMinutes: duration,
       ownerUsername: user.username,
-      status: 'PENDING' // Default
+      status: 'PENDING'
     };
     
-    setRecords(prev => [newRecord, ...prev]);
+    await syncRecords([newRecord, ...records]);
   };
 
-  const handleUpdateRecord = (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
+  const handleUpdateRecord = async (data: Omit<OvertimeRecord, 'id' | 'createdAt' | 'durationMinutes' | 'ownerUsername' | 'status'>) => {
     if (!editingRecord) return;
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
-    setRecords(prev => prev.map(r => r.id === editingRecord.id ? { ...r, ...data, durationMinutes: duration } : r));
+    const updated = records.map(r => r.id === editingRecord.id ? { ...r, ...data, durationMinutes: duration } : r);
+    await syncRecords(updated);
     setEditingRecord(null);
   };
 
-  const handleUpdateStatus = (id: string, newStatus: OvertimeStatus) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+  const handleUpdateStatus = async (id: string, newStatus: OvertimeStatus) => {
+    const updated = records.map(r => r.id === id ? { ...r, status: newStatus } : r);
+    await syncRecords(updated);
   };
 
-  const handleDeleteRecord = (id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id));
+  const handleDeleteRecord = async (id: string) => {
+    const updated = records.filter(r => r.id !== id);
+    await syncRecords(updated);
     if (editingRecord?.id === id) setEditingRecord(null);
   };
 
@@ -96,6 +120,17 @@ const App: React.FC = () => {
     setUser(updatedUser);
     sessionStorage.setItem('logged_user', JSON.stringify(updatedUser));
   };
+
+  if (isLoading && !user) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-white font-bold animate-pulse">Sincronizando Banco de Dados...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return <AuthSystem onLogin={handleLogin} />;
 
@@ -110,11 +145,17 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 mb-8 sticky top-0 z-[100] shadow-xl border-b border-slate-800">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg relative">
               <i className="fa-solid fa-business-time text-white text-lg"></i>
+              {isSyncing && (
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping"></div>
+              )}
             </div>
             <div className="hidden xs:block">
-              <h1 className="font-bold text-lg leading-tight">Overtime</h1>
+              <h1 className="font-bold text-lg leading-tight flex items-center gap-2">
+                Overtime
+                {isSyncing && <span className="text-[8px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase tracking-tighter">Sync</span>}
+              </h1>
               <p className="text-[10px] text-slate-400 font-bold uppercase truncate max-w-[120px]">
                 {user.name}
               </p>
@@ -126,7 +167,7 @@ const App: React.FC = () => {
               onClick={() => setIsPasswordModalOpen(true)}
               className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2.5 rounded-xl border border-slate-700 transition-all font-bold"
             >
-              <i className="fa-solid fa-key mr-2"></i>
+              <i className="fa-solid fa-key sm:mr-2"></i>
               <span className="hidden sm:inline">Senha</span>
             </button>
 
@@ -135,8 +176,8 @@ const App: React.FC = () => {
                 onClick={() => setIsLoggingOut(true)} 
                 className="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl border border-slate-700 transition-all font-bold"
               >
-                <i className="fa-solid fa-right-from-bracket mr-2"></i>
-                <span>Sair</span>
+                <i className="fa-solid fa-right-from-bracket sm:mr-2"></i>
+                <span className="hidden sm:inline">Sair</span>
               </button>
             ) : (
               <button 
