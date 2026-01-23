@@ -1,8 +1,8 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Versão 14 - Bucket otimizado para sincronização multi-dispositivo
-const BUCKET_NAME = 'ailton_overtime_v14_realtime'; 
+// Versão 15 - Bucket definitivo com sincronização de alta prioridade
+const BUCKET_NAME = 'ailton_overtime_v15_final'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
 async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): Promise<any> {
@@ -10,6 +10,8 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
   
   const headers: HeadersInit = {
     'Accept': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache'
   };
 
   if (data) {
@@ -22,7 +24,6 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
       mode: 'cors',
       headers,
       body: data ? JSON.stringify(data) : undefined,
-      // Cache: 'no-store' garante que o navegador sempre pegue o dado novo da nuvem
       cache: 'no-store'
     });
 

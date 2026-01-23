@@ -19,17 +19,35 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<'SYNCING' | 'ONLINE' | 'OFFLINE'>('SYNCING');
 
+  // Função para mesclar listas de usuários sem perder dados locais
+  const mergeUsers = (local: User[], remote: User[]): User[] => {
+    const userMap = new Map<string, User>();
+    // Primeiro adicionamos os remotos
+    remote.forEach(u => userMap.set(u.username, u));
+    // Depois os locais (locais ganham se forem mais novos/estiverem apenas aqui)
+    local.forEach(u => {
+      if (!userMap.has(u.username)) {
+        userMap.set(u.username, u);
+      }
+    });
+    return Array.from(userMap.values());
+  };
+
   const syncDatabase = async () => {
     setCloudStatus('SYNCING');
+    const localRaw = localStorage.getItem('users_backup_v15');
+    const localUsers: User[] = localRaw ? JSON.parse(localRaw) : [];
+
     try {
       const remoteUsers = await SyncService.getUsers();
-      localStorage.setItem('users_backup_v14', JSON.stringify(remoteUsers));
+      const merged = mergeUsers(localUsers, remoteUsers);
+      
+      localStorage.setItem('users_backup_v15', JSON.stringify(merged));
       setCloudStatus('ONLINE');
-      return remoteUsers;
+      return merged;
     } catch (err) {
       setCloudStatus('OFFLINE');
-      const local = localStorage.getItem('users_backup_v14');
-      return local ? JSON.parse(local) : [];
+      return localUsers;
     }
   };
 
@@ -47,6 +65,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     const cleanUsername = username.toLowerCase().trim();
 
     try {
+      // Sempre sincroniza antes de qualquer ação
       const allUsers: User[] = await syncDatabase();
 
       if (isRegistering) {
@@ -72,12 +91,18 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
         };
         
         const updatedUsers = [...allUsers, newUser];
-        localStorage.setItem('users_backup_v14', JSON.stringify(updatedUsers));
         
+        // 1. Salva local imediatamente
+        localStorage.setItem('users_backup_v15', JSON.stringify(updatedUsers));
+        
+        // 2. Tenta salvar na nuvem e espera um pouco mais
         try {
-          await SyncService.saveUsers(updatedUsers);
+          const success = await SyncService.saveUsers(updatedUsers);
+          if (!success) throw new Error("Cloud save failed");
+          setCloudStatus('ONLINE');
         } catch {
-          console.warn("Saving user locally only due to network.");
+          console.warn("User saved locally only. Sync will happen later.");
+          setCloudStatus('OFFLINE');
         }
         
         onLogin(newUser);
@@ -86,11 +111,26 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
         if (user) {
           onLogin(user);
         } else {
-          setError('Usuário ou senha incorretos.');
+          // Tenta uma última busca na nuvem se não achou localmente
+          setCloudStatus('SYNCING');
+          try {
+            const freshRemote = await SyncService.getUsers();
+            const freshMerged = mergeUsers(allUsers, freshRemote);
+            localStorage.setItem('users_backup_v15', JSON.stringify(freshMerged));
+            const freshUser = freshMerged.find(u => u.username === cleanUsername && u.password === password.trim());
+            
+            if (freshUser) {
+              onLogin(freshUser);
+            } else {
+              setError('Usuário ou senha incorretos.');
+            }
+          } catch {
+            setError('Usuário ou senha incorretos (Offline).');
+          }
         }
       }
     } catch (err) {
-      setError('Erro de sistema. Tente recarregar a página.');
+      setError('Erro de sistema. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
@@ -98,54 +138,56 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
 
   return (
     <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-8 border border-slate-200 relative overflow-hidden">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-200 relative overflow-hidden">
         
-        <div className="absolute top-4 right-4">
-           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[8px] font-black border transition-all ${
+        <div className="absolute top-6 right-8">
+           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black border transition-all shadow-sm ${
              cloudStatus === 'ONLINE' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
              cloudStatus === 'OFFLINE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'
            }`}>
-             <i className={`fa-solid ${cloudStatus === 'SYNCING' ? 'fa-spinner animate-spin' : 'fa-circle'}`}></i>
+             <i className={`fa-solid ${cloudStatus === 'SYNCING' ? 'fa-spinner animate-spin' : 'fa-circle-check'}`}></i>
              {cloudStatus}
            </div>
         </div>
 
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center text-white text-3xl mb-4 shadow-xl">
+        <div className="text-center mb-8 pt-4">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-800 rounded-3xl mx-auto flex items-center justify-center text-white text-4xl mb-6 shadow-2xl transform -rotate-3">
             <i className="fa-solid fa-clock-rotate-left"></i>
           </div>
-          <h2 className="text-2xl font-black text-slate-900 leading-none">Overtime</h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2 italic">Ailton Souza • v14 Realtime</p>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Overtime</h2>
+          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-3 italic">Ailton Souza • v15 Final Fix</p>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
+        <form onSubmit={handleAuth} className="space-y-5">
           {error && (
-            <div className="bg-red-50 text-red-700 p-3 rounded-xl text-xs font-bold border border-red-100 text-center animate-bounce">
+            <div className="bg-red-50 text-red-700 p-4 rounded-2xl text-xs font-bold border border-red-100 text-center animate-shake">
               <i className="fa-solid fa-triangle-exclamation mr-2"></i>
               {error}
             </div>
           )}
           
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Usuário</label>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-3">Nome de Usuário</label>
             <input 
               required 
               disabled={isProcessing}
               autoCapitalize="none"
-              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 transition-all"
+              autoComplete="username"
+              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all placeholder:text-slate-300"
               value={username}
               onChange={e => setUsername(e.target.value)}
               placeholder="Ex: joao.silva"
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Senha</label>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-3">Senha de Acesso</label>
             <input 
               required 
               type="password"
               disabled={isProcessing}
-              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 transition-all"
+              autoComplete="current-password"
+              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all placeholder:text-slate-300"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••"
@@ -153,10 +195,10 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
           </div>
 
           {isRegistering && (
-            <div className="space-y-4 pt-2 border-t border-slate-100 mt-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Tipo de Perfil</label>
-                <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700" value={role} onChange={e => {setRole(e.target.value as UserRole); setName('');}}>
+            <div className="space-y-5 pt-4 border-t border-slate-100 mt-4 animate-fadeIn">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-3">Ocupação / Cargo</label>
+                <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:border-blue-500 transition-all" value={role} onChange={e => {setRole(e.target.value as UserRole); setName('');}}>
                   <option value="EMPLOYEE">Colaborador</option>
                   <option value="SUPERVISOR">Supervisor</option>
                   <option value="COORDINATOR">Coordenador</option>
@@ -164,23 +206,23 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
               </div>
 
               {role !== 'COORDINATOR' && (
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Seu Nome</label>
-                  <select required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700" value={name} onChange={e => setName(e.target.value)}>
-                    <option value="">-- Selecionar --</option>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-3">Seu Nome Completo</label>
+                  <select required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:border-blue-500 transition-all" value={name} onChange={e => setName(e.target.value)}>
+                    <option value="">-- Selecionar na Lista --</option>
                     {role === 'SUPERVISOR' 
                       ? SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)
-                      : (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Escolha o Supervisor primeiro</option>)
+                      : (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Defina o Supervisor abaixo primeiro</option>)
                     }
                   </select>
                 </div>
               )}
 
               {role === 'EMPLOYEE' && (
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-blue-400 uppercase ml-2">Seu Supervisor</label>
-                  <select required className="w-full p-4 bg-blue-50 border border-blue-200 rounded-xl outline-none font-bold text-blue-700" value={selectedSup} onChange={e => setSelectedSup(e.target.value)}>
-                    <option value="">-- Selecionar Supervisor --</option>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-blue-500 uppercase ml-3">Seu Supervisor Direto</label>
+                  <select required className="w-full p-4 bg-blue-50 border border-blue-200 rounded-2xl outline-none font-bold text-blue-700 focus:border-blue-600 transition-all" value={selectedSup} onChange={e => setSelectedSup(e.target.value)}>
+                    <option value="">-- Escolher Supervisor --</option>
                     {SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
@@ -188,18 +230,28 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             </div>
           )}
 
-          <button type="submit" disabled={isProcessing} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl shadow-lg active:scale-[0.98] transition-all text-sm tracking-widest uppercase mt-4 flex items-center justify-center gap-3">
-            {isProcessing && <i className="fa-solid fa-spinner animate-spin"></i>}
-            {isRegistering ? 'Criar Conta' : 'Entrar no Sistema'}
+          <button type="submit" disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-500/20 active:scale-[0.97] transition-all text-xs tracking-[0.2em] uppercase mt-6 flex items-center justify-center gap-3">
+            {isProcessing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-right-to-bracket"></i>}
+            {isRegistering ? 'Cadastrar Agora' : 'Acessar Sistema'}
           </button>
         </form>
 
-        <div className="mt-8 text-center border-t border-slate-50 pt-4">
+        <div className="mt-8 text-center border-t border-slate-50 pt-6">
           <button onClick={() => setIsRegistering(!isRegistering)} className="text-[10px] text-slate-400 font-black uppercase tracking-widest hover:text-blue-600 p-2 transition-colors">
-            {isRegistering ? 'Já tenho conta? Fazer Login' : 'Não tem conta? Cadastre-se'}
+            {isRegistering ? 'Já tem conta? Clique para Entrar' : 'Novo por aqui? Crie sua Conta'}
           </button>
         </div>
       </div>
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </div>
   );
 };
