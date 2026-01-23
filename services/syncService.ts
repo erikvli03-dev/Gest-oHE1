@@ -1,23 +1,25 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Chave única e definitiva para evitar conflitos de cache ou rede
 const PROJECT_ID = 'ailton_overtime_final_v7_stable'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${PROJECT_ID}`;
 
 async function fetchWithRetry(resource: string, options: any = {}, retries = 2): Promise<Response> {
+  // Cache Busting: Adiciona um timestamp para garantir que a rede não use cache
+  const url = new URL(resource);
+  url.searchParams.set('cb', Date.now().toString());
+
   try {
-    const response = await fetch(resource, {
+    const response = await fetch(url.toString(), {
       ...options,
       mode: 'cors',
-      cache: 'no-store', // Garante que o celular não use dados velhos
+      cache: 'no-store',
       headers: {
         ...options.headers,
         'Accept': 'application/json'
       }
     });
 
-    // Se for 404, não é erro de rede, é apenas banco vazio. Retornamos a resposta.
     if (response.status === 404) return response;
 
     if (!response.ok && retries > 0) {

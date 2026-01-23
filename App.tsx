@@ -22,17 +22,17 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string>('');
+  const [syncCount, setSyncCount] = useState<number | null>(null);
   const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
 
   const forceSync = async () => {
     setIsSyncing(true);
     try {
-      // Puxa registros
       const cloudRecords = await SyncService.getRecords();
       setRecords(cloudRecords);
+      setSyncCount(cloudRecords.length);
       localStorage.setItem('overtime_records_cache', JSON.stringify(cloudRecords));
       
-      // Puxa usuários (para garantir que logins criados em outros locais funcionem)
       const remoteUsers = await SyncService.getUsers();
       if (remoteUsers.length > 0) {
         localStorage.setItem('users_emergency_backup', JSON.stringify(remoteUsers));
@@ -49,19 +49,22 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
-      // Primeiro carrega o que tem no celular/PC para não ficar branco
       const local = localStorage.getItem('overtime_records_cache');
-      if (local) setRecords(JSON.parse(local));
+      if (local) {
+        const parsed = JSON.parse(local);
+        setRecords(parsed);
+        setSyncCount(parsed.length);
+      }
       
-      // Depois busca na nuvem o que há de novo
-      await forceSync();
+      if (user) await forceSync();
       setIsLoading(false);
     };
     init();
-  }, []);
+  }, [user?.username]); // Re-executa se o usuário mudar
 
   const syncRecords = useCallback(async (newRecords: OvertimeRecord[]) => {
     setRecords(newRecords);
+    setSyncCount(newRecords.length);
     localStorage.setItem('overtime_records_cache', JSON.stringify(newRecords));
     setIsSyncing(true);
     const success = await SyncService.saveRecords(newRecords);
@@ -74,10 +77,11 @@ const App: React.FC = () => {
   const handleLogin = (u: User) => {
     sessionStorage.setItem('logged_user', JSON.stringify(u));
     setUser(u);
-    forceSync(); // Sincroniza logo após o login
+    // O useEffect acima cuidará do forceSync ao detectar a mudança de user
   };
 
   const handleLogout = () => {
+    if (!window.confirm('Deseja realmente sair?')) return;
     sessionStorage.removeItem('logged_user');
     setUser(null);
   };
@@ -90,7 +94,7 @@ const App: React.FC = () => {
       id: `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       createdAt: Date.now(),
       durationMinutes: duration,
-      ownerUsername: user.username,
+      ownerUsername: user.username.toLowerCase().trim(),
       status: 'PENDING'
     };
     await syncRecords([newRecord, ...records]);
@@ -110,7 +114,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!window.confirm('Deseja excluir este registro?')) return;
+    if (!window.confirm('Deseja excluir este registro permanentemente?')) return;
     const updated = records.filter(r => r.id !== id);
     await syncRecords(updated);
   };
@@ -122,14 +126,21 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center relative">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center relative shadow-lg shadow-blue-900/20">
               <i className="fa-solid fa-clock text-white"></i>
               {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
             </div>
             <div>
-              <h1 className="font-bold text-sm leading-none">Overtime</h1>
+              <h1 className="font-bold text-sm leading-none flex items-center gap-2">
+                Overtime
+                {syncCount !== null && (
+                  <span className="bg-blue-500/20 text-blue-400 text-[8px] px-1.5 py-0.5 rounded-md font-black border border-blue-500/30">
+                    {syncCount} RECS
+                  </span>
+                )}
+              </h1>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] text-blue-400 font-black uppercase">{user.name}</span>
+                <span className="text-[9px] text-blue-400 font-black uppercase tracking-tight">{user.name}</span>
                 {lastSync && <span className="text-[8px] text-slate-500 font-bold tracking-tighter">SINC: {lastSync}</span>}
               </div>
             </div>
@@ -139,8 +150,8 @@ const App: React.FC = () => {
             <button 
               onClick={forceSync} 
               disabled={isSyncing}
-              className={`p-2.5 rounded-xl text-xs border transition-all ${isSyncing ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-slate-800 border-slate-700 text-white active:bg-slate-700'}`}
-              title="Sincronizar"
+              className={`p-2.5 rounded-xl text-xs border transition-all ${isSyncing ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-slate-800 border-slate-700 text-white active:bg-slate-700 shadow-lg'}`}
+              title="Sincronizar Manualmente"
             >
               <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
@@ -153,9 +164,9 @@ const App: React.FC = () => {
 
       <main className="container mx-auto px-4 max-w-6xl mt-6">
         {isLoading && (
-          <div className="fixed inset-0 bg-slate-50/80 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
+          <div className="fixed inset-0 bg-slate-50/90 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-             <p className="text-blue-600 font-black text-[10px] uppercase tracking-widest">Carregando dados da nuvem...</p>
+             <p className="text-blue-600 font-black text-[10px] uppercase tracking-widest animate-pulse">Buscando atualizações na nuvem...</p>
           </div>
         )}
 
