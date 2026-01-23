@@ -1,17 +1,22 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// v27: Novo bucket para evitar limites de taxa e instabilidade
-const BUCKET_NAME = 'ailton_v27_stable'; 
+// v28: Novo bucket e limite de timeout para evitar travamentos
+const BUCKET_NAME = 'ailton_v28_emergency'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
 async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): Promise<any> {
   const url = `${BASE_URL}_${key}?cache_bust=${Date.now()}`;
   
+  // Cria um controlador para cancelar a requisição se demorar mais de 3 segundos
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
+
   try {
     const response = await fetch(url, {
       method,
       mode: 'cors',
+      signal: controller.signal,
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json'
@@ -19,21 +24,25 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
       body: data ? JSON.stringify(data) : undefined,
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      if (response.status === 404) return method === 'GET' ? [] : false;
-      return false;
+      // Se atingiu o limite (429) ou erro de servidor (5xx), retorna nulo para o app seguir em modo local
+      return null;
     }
     
     return method === 'GET' ? await response.json() : true;
   } catch (err) {
-    console.warn("Rede instável, operando em modo local.");
-    return method === 'GET' ? null : false;
+    clearTimeout(timeoutId);
+    console.warn("Nuvem atingiu o limite ou está offline. Operando Localmente.");
+    return null;
   }
 }
 
 export const SyncService = {
   async saveRecords(records: OvertimeRecord[]): Promise<boolean> {
-    return await apiCall('recs', 'PUT', records);
+    const res = await apiCall('recs', 'PUT', records);
+    return !!res;
   },
 
   async getRecords(): Promise<OvertimeRecord[]> {
@@ -42,7 +51,8 @@ export const SyncService = {
   },
 
   async saveUsers(users: User[]): Promise<boolean> {
-    return await apiCall('users', 'PUT', users);
+    const res = await apiCall('users', 'PUT', users);
+    return !!res;
   },
 
   async getUsers(): Promise<User[]> {
