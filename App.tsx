@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v29_recs';
+  const CACHE_RECS = 'overtime_v30_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncInput, setSyncInput] = useState('');
 
+  // v30: Carregamento instantâneo do celular
   useEffect(() => {
     if (user) {
       const cached = localStorage.getItem(CACHE_RECS);
@@ -30,7 +31,11 @@ const App: React.FC = () => {
           if (Array.isArray(parsed)) setRecords(parsed);
         } catch (e) { setRecords([]); }
       }
-      forceSync();
+      
+      // Sincroniza em segundo plano apenas se a nuvem estiver "saudável"
+      if (SyncService.isCloudReady()) {
+        forceSync();
+      }
     }
   }, [user?.username]);
 
@@ -43,7 +48,7 @@ const App: React.FC = () => {
       }
       setLastSync(new Date().toLocaleTimeString());
     } catch (e) {
-      console.log("Modo local ativo.");
+      console.log("Servidor em limite. Modo local ativo.");
     }
   };
 
@@ -61,7 +66,7 @@ const App: React.FC = () => {
       return final;
     });
     if (!isCloud) {
-      alert(`Sincronizado!`);
+      alert(`Dados sincronizados localmente!`);
       setShowSyncModal(false);
       setSyncInput('');
     }
@@ -91,7 +96,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!confirm('Deseja excluir?')) return;
+    if (!confirm('Excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
     localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
@@ -107,12 +112,17 @@ const App: React.FC = () => {
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-black">HE</div>
           <div>
             <p className="text-xs font-black tracking-tight">{user.name}</p>
-            <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">v29 • {lastSync || 'Local'}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+              <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">
+                v30 • {SyncService.isCloudReady() ? 'ONLINE' : 'LIMITADO'}
+              </p>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowSyncModal(true)} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase">
-            <i className="fa-solid fa-sync mr-1"></i> Sincronizar
+          <button onClick={() => setShowSyncModal(true)} className="px-3 py-2 bg-slate-800 border border-white/5 text-white rounded-xl text-[10px] font-black uppercase">
+            <i className="fa-solid fa-cloud-arrow-up mr-1 text-blue-400"></i> Sync
           </button>
           <button onClick={() => { sessionStorage.clear(); setUser(null); }} className="w-10 h-10 bg-slate-800 text-slate-400 rounded-xl flex items-center justify-center border border-white/5">
             <i className="fa-solid fa-power-off"></i>
@@ -121,28 +131,32 @@ const App: React.FC = () => {
       </header>
 
       {showSyncModal && (
-        <div className="fixed inset-0 bg-slate-950/90 z-[200] p-4 flex items-center justify-center backdrop-blur-md overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-950/90 z-[200] p-4 flex items-center justify-center backdrop-blur-md">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Backup & Sincronismo</h3>
-              <button onClick={() => setShowSyncModal(false)} className="text-slate-400"><i className="fa-solid fa-xmark"></i></button>
+              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Sincronização</h3>
+              <button onClick={() => setShowSyncModal(false)} className="text-slate-400 p-2"><i className="fa-solid fa-xmark"></i></button>
             </div>
             
-            <div className="space-y-6">
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                <h4 className="text-[10px] font-black text-emerald-700 uppercase mb-3">Opção 1: Via WhatsApp (100% Confiável)</h4>
-                <button onClick={() => {
-                  const data = JSON.stringify({ records, v: '29', sender: user.name });
-                  const msg = `🚀 *HE - ${user.name}*\n\nMeus registros v29:\n\n*CÓDIGO:* ${data}`;
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
-                }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg">Enviar Meus Dados</button>
-              </div>
+            <div className="space-y-4">
+               {!SyncService.isCloudReady() && (
+                 <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-[10px] text-amber-700 font-bold">
+                   A nuvem atingiu o limite. Use o WhatsApp abaixo para enviar seus dados ao supervisor.
+                 </div>
+               )}
 
-              <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100">
-                <h4 className="text-[10px] font-black text-purple-700 uppercase mb-3">Opção 2: Importar Dados da Equipe</h4>
-                <textarea value={syncInput} onChange={e => setSyncInput(e.target.value)} placeholder="Cole aqui o código recebido..." className="w-full h-24 bg-white border border-purple-100 p-3 text-[9px] font-mono rounded-xl outline-none" />
-                <button onClick={() => { try { handleDataImport(JSON.parse(syncInput)); } catch { alert('Código inválido!'); } }} className="w-full bg-purple-600 text-white py-3 rounded-xl font-black text-[11px] uppercase mt-2">Sincronizar Agora</button>
-              </div>
+              <button onClick={() => {
+                const data = JSON.stringify({ records, v: '30', sender: user.name });
+                const msg = `🚀 *HE - ${user.name}*\n\nMeus registros v30:\n\n*CÓDIGO:* ${data}`;
+                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+              }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2">
+                <i className="fa-brands fa-whatsapp text-lg"></i> Enviar p/ Supervisor
+              </button>
+
+              <div className="h-px bg-slate-100 my-4"></div>
+
+              <textarea value={syncInput} onChange={e => setSyncInput(e.target.value)} placeholder="Cole o código recebido aqui para importar..." className="w-full h-24 bg-slate-50 border border-slate-200 p-3 text-[9px] font-mono rounded-xl outline-none" />
+              <button onClick={() => { try { handleDataImport(JSON.parse(syncInput)); } catch { alert('Código inválido!'); } }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black text-[11px] uppercase">Importar Dados</button>
             </div>
           </div>
         </div>
@@ -155,11 +169,9 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="lg:col-span-8 space-y-6">
-          {user.role !== 'EMPLOYEE' && Array.isArray(records) && <DashboardStats records={records} />}
+          {user.role !== 'EMPLOYEE' && <DashboardStats records={records} />}
           <div className="bg-white rounded-3xl p-1 border border-slate-200">
-            {Array.isArray(records) && (
-              <OvertimeList records={records} onDelete={handleDeleteRecord} onUpdateStatus={handleUpdateStatus} currentUser={user} onEdit={()=>{}} />
-            )}
+            <OvertimeList records={records} onDelete={handleDeleteRecord} onUpdateStatus={handleUpdateStatus} currentUser={user} onEdit={()=>{}} />
           </div>
         </div>
       </main>
