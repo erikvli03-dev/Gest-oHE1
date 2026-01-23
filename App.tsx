@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v17_recs';
+  const CACHE_RECS = 'overtime_v18_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -25,9 +25,7 @@ const App: React.FC = () => {
   const pollingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Limpeza de versions problemáticas
-    localStorage.removeItem('overtime_v16_recs');
-    localStorage.removeItem('overtime_cache_v15');
+    localStorage.removeItem('overtime_v17_recs');
   }, []);
 
   const mergeRecords = (local: OvertimeRecord[], remote: OvertimeRecord[]): OvertimeRecord[] => {
@@ -63,7 +61,7 @@ const App: React.FC = () => {
       if (cached) setRecords(JSON.parse(cached));
       forceSync();
 
-      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 30000) as unknown as number;
+      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 25000) as unknown as number;
     }
     return () => { if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current); };
   }, [user?.username]);
@@ -93,7 +91,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    if (!window.confirm('Deseja realmente sair?')) return;
+    if (!window.confirm('Sair do sistema?')) return;
     sessionStorage.removeItem('logged_user');
     setUser(null);
   };
@@ -133,7 +131,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!window.confirm('Deseja excluir este registro?')) return;
+    if (!window.confirm('Excluir?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
     localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
@@ -145,38 +143,21 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
       <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl border-b border-white/5">
-        <div className="container mx-auto px-4 flex justify-between items-center">
+        <div className="container mx-auto px-4 flex justify-between items-center text-xs">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-all ${syncError ? 'bg-amber-500' : 'bg-blue-600'} ${isSyncing ? 'scale-110' : ''}`}>
-              <i className={`fa-solid ${syncError ? 'fa-cloud-arrow-up' : 'fa-clock-rotate-left'} text-white`}></i>
-              {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
-            </div>
-            <div>
-              <h1 className="font-bold text-sm leading-none flex items-center gap-2 uppercase tracking-tight">
-                Dashboard
-                <span className="bg-blue-500/20 text-blue-400 text-[10px] px-1.5 py-0.5 rounded-md font-black border border-blue-500/30">
-                  {records.length}
-                </span>
-              </h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[9px] text-blue-400 font-black uppercase">{user.name}</span>
-                {lastSync && !syncError && (
-                  <span className="text-[8px] text-emerald-400 font-bold uppercase flex items-center gap-1">
-                    <span className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse"></span>
-                    Sincronizado: {lastSync}
-                  </span>
-                )}
-                {syncError && <span className="text-[8px] text-amber-500 font-bold animate-pulse uppercase">Modo Local (Offline)</span>}
-              </div>
-            </div>
+             <div className="font-black tracking-tighter text-blue-400">HE.INSIGHT</div>
+             <div className="flex flex-col">
+                <span className="font-bold">{user.name}</span>
+                <span className="text-[8px] opacity-50 uppercase tracking-widest">{lastSync || 'Sincronizando...'}</span>
+             </div>
           </div>
           
           <div className="flex gap-2">
-            <button onClick={() => forceSync()} disabled={isSyncing} className="p-2.5 rounded-xl text-xs bg-slate-800 text-white border border-slate-700 active:scale-90 transition-all shadow-inner">
-              <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
+            <button onClick={() => forceSync()} className="p-2.5 bg-slate-800 rounded-xl">
+              <i className={`fa-solid fa-sync ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
-            <button onClick={handleLogout} className="p-2.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-[10px] font-black hover:text-white transition-all">
-              SAIR
+            <button onClick={handleLogout} className="p-2.5 bg-slate-800 rounded-xl">
+              <i className="fa-solid fa-power-off"></i>
             </button>
           </div>
         </div>

@@ -1,17 +1,19 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Versão 17 - Novo túnel de dados para evitar bloqueios regionais
-const BUCKET_NAME = 'ailton_overtime_v17_final_sync'; 
+// Versão 18 - Canal único e limpo para evitar conflitos
+const BUCKET_NAME = 'ailton_overtime_v18_ultra_resilient'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
-async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any, retries = 2): Promise<any> {
-  // Adiciona timestamp e random para furar qualquer cache de operadora/browser
-  const nonce = Math.random().toString(36).substring(7);
-  const url = `${BASE_URL}_${key}?cache=${nonce}&t=${Date.now()}`;
+async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any, retries = 3): Promise<any> {
+  // O uso de Math.random() e Date.now() em cada chamada garante que o PC não use dados "velhos" do cache
+  const url = `${BASE_URL}_${key}?z=${Math.random().toString(36).substring(2, 15)}&t=${Date.now()}`;
   
   const headers: HeadersInit = {
     'Accept': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
   };
 
   if (data) {
@@ -21,7 +23,7 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any, r
   for (let i = 0; i <= retries; i++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const response = await fetch(url, {
         method,
@@ -36,15 +38,10 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any, r
       if (response.status === 404) return method === 'GET' ? [] : false;
       if (!response.ok) throw new Error(`HTTP_${response.status}`);
       
-      const result = method === 'GET' ? await response.json() : true;
-      return result;
+      return method === 'GET' ? await response.json() : true;
     } catch (err) {
-      if (i === retries) {
-        console.error(`Sync Failure (${key}):`, err);
-        throw new Error('NETWORK_ERROR');
-      }
-      // Espera 1s antes da re-tentativa
-      await new Promise(res => setTimeout(res, 1000));
+      if (i === retries) throw err;
+      await new Promise(res => setTimeout(res, 800 * (i + 1)));
     }
   }
 }
@@ -62,13 +59,23 @@ export const SyncService = {
   },
 
   async saveUsers(users: User[]): Promise<boolean> {
-    try { return await apiCall('users', 'PUT', users); } catch { return false; }
+    try {
+      // Tenta salvar
+      const success = await apiCall('users', 'PUT', users);
+      if (!success) return false;
+      
+      // Validação: Tenta ler de volta para ter certeza que a nuvem aceitou
+      const check = await this.getUsers();
+      return check.length === users.length;
+    } catch { return false; }
   },
 
   async getUsers(): Promise<User[]> {
     try {
       const data = await apiCall('users', 'GET');
       return Array.isArray(data) ? data : [];
-    } catch { return []; }
+    } catch { 
+      throw new Error('OFFLINE'); 
+    }
   }
 };
