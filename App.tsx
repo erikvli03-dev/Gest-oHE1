@@ -19,87 +19,78 @@ const App: React.FC = () => {
     }
   });
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string>('');
   const [syncError, setSyncError] = useState(false);
   const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
 
-  // Função para mesclar registros locais e remotos sem perdas
   const mergeRecords = (local: OvertimeRecord[], remote: OvertimeRecord[]): OvertimeRecord[] => {
-    const merged = [...remote];
+    const recordMap = new Map<string, OvertimeRecord>();
+    // Prioridade para dados remotos (nuvem)
+    remote.forEach(r => recordMap.set(r.id, r));
+    // Adiciona locais que ainda não existem na nuvem
     local.forEach(l => {
-      if (!merged.find(m => m.id === l.id)) {
-        merged.push(l);
-      }
+      if (!recordMap.has(l.id)) recordMap.set(l.id, l);
     });
-    return merged.sort((a, b) => b.createdAt - a.createdAt);
+    return Array.from(recordMap.values()).sort((a, b) => b.createdAt - a.createdAt);
   };
 
-  const forceSync = async () => {
+  const forceSync = async (silent = false) => {
     if (!user) return;
-    setIsSyncing(true);
+    if (!silent) setIsSyncing(true);
     setSyncError(false);
+    
     try {
-      // 1. Busca dados da nuvem
       const cloudRecords = await SyncService.getRecords();
-      
-      // 2. Mescla com o que já temos no estado atual (previne apagar dados novos não salvos)
       setRecords(prev => {
         const merged = mergeRecords(prev, cloudRecords);
-        localStorage.setItem('overtime_records_cache', JSON.stringify(merged));
+        localStorage.setItem('overtime_records_cache_v10', JSON.stringify(merged));
         return merged;
       });
-
-      // 3. Busca usuários para backup
+      
       const remoteUsers = await SyncService.getUsers();
       if (remoteUsers.length > 0) {
-        localStorage.setItem('users_emergency_backup', JSON.stringify(remoteUsers));
+        localStorage.setItem('users_emergency_backup_v10', JSON.stringify(remoteUsers));
       }
       
       setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
-      console.error("Sync Error:", e);
+      console.error("Sync failed:", e);
       setSyncError(true);
-      // Não alteramos o estado de 'records' aqui para manter o que já existe localmente
     } finally {
-      setIsSyncing(false);
+      if (!silent) setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    const init = async () => {
-      setIsLoading(true);
-      const local = localStorage.getItem('overtime_records_cache');
-      if (local) {
-        setRecords(JSON.parse(local));
-      }
-      
-      if (user) {
-        await forceSync();
-      }
-      setIsLoading(false);
-    };
-    init();
+    if (user) {
+      const local = localStorage.getItem('overtime_records_cache_v10');
+      if (local) setRecords(JSON.parse(local));
+      forceSync();
+    }
   }, [user?.username]);
 
-  // Função central para salvar dados com segurança
   const pushToCloud = async (currentLocalRecords: OvertimeRecord[]) => {
     setIsSyncing(true);
+    setSyncError(false);
     try {
-      // Primeiro baixa o que está lá para não atropelar dados de outros dispositivos
+      // 1. Tenta baixar o mais recente primeiro
       const remote = await SyncService.getRecords();
+      // 2. Mescla com o que o usuário acabou de fazer
       const finalToSave = mergeRecords(currentLocalRecords, remote);
-      
+      // 3. Salva tudo
       const success = await SyncService.saveRecords(finalToSave);
+      
       if (success) {
         setRecords(finalToSave);
-        localStorage.setItem('overtime_records_cache', JSON.stringify(finalToSave));
+        localStorage.setItem('overtime_records_cache_v10', JSON.stringify(finalToSave));
         setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+      } else {
+        throw new Error('Save failed');
       }
     } catch (err) {
       setSyncError(true);
-      // Mantemos o estado local para tentar novamente depois
     } finally {
       setIsSyncing(false);
     }
@@ -162,7 +153,7 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl border-b border-white/5">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-colors ${syncError ? 'bg-red-600 shadow-red-900/20' : 'bg-blue-600 shadow-blue-900/20'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-colors ${syncError ? 'bg-red-600' : 'bg-blue-600'}`}>
               <i className={`fa-solid ${syncError ? 'fa-triangle-exclamation' : 'fa-clock'} text-white`}></i>
               {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
             </div>
@@ -175,7 +166,7 @@ const App: React.FC = () => {
               </h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[9px] text-blue-400 font-black uppercase tracking-tight">{user.name}</span>
-                {lastSync && !syncError && <span className="text-[8px] text-slate-500 font-bold">SINC: {lastSync}</span>}
+                {lastSync && !syncError && <span className="text-[8px] text-slate-500 font-bold">OK: {lastSync}</span>}
                 {syncError && <span className="text-[8px] text-red-500 font-bold animate-pulse">ERRO DE REDE</span>}
               </div>
             </div>
@@ -183,14 +174,13 @@ const App: React.FC = () => {
           
           <div className="flex gap-2">
             <button 
-              onClick={forceSync} 
+              onClick={() => forceSync()} 
               disabled={isSyncing}
-              className={`p-2.5 rounded-xl text-xs border transition-all ${isSyncing ? 'bg-slate-800 border-slate-700 text-slate-500' : syncError ? 'bg-red-900/20 border-red-500/30 text-red-400' : 'bg-slate-800 border-slate-700 text-white active:bg-slate-700 shadow-lg'}`}
-              title="Atualizar Dados"
+              className={`p-2.5 rounded-xl text-xs border transition-all ${isSyncing ? 'bg-slate-800 text-slate-600' : 'bg-slate-800 text-white border-slate-700 active:scale-90'}`}
             >
               <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
-            <button onClick={handleLogout} className="p-2.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-[10px] font-black tracking-widest active:scale-95 transition-all">
+            <button onClick={handleLogout} className="p-2.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-[10px] font-black active:scale-95 transition-all">
               SAIR
             </button>
           </div>
@@ -198,13 +188,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 max-w-6xl mt-6">
-        {isLoading && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
-             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-             <p className="text-white font-black text-[10px] uppercase tracking-widest">Sincronizando...</p>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4">
             <OvertimeForm 

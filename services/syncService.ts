@@ -1,23 +1,24 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Nova versão v9 com lógica de merge incremental
-const PROJECT_ID = 'ailton_overtime_v9_ultra_stable'; 
+// Versão v10 estável com URL fixa
+const PROJECT_ID = 'ailton_overtime_v10_gold_standard'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${PROJECT_ID}`;
 
 async function fetchWithRetry(resource: string, options: any = {}, retries = 3): Promise<Response> {
-  const url = new URL(resource);
-  url.searchParams.set('cb', Date.now().toString());
-
+  // ATENÇÃO: Nunca adicionar parâmetros de busca (?cb=...) na URL do KVDB, 
+  // pois ele interpreta como parte do nome da chave.
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(resource, {
       ...options,
       mode: 'cors',
-      cache: 'no-store',
+      cache: 'no-store', // Força o navegador a não usar cache
       headers: {
-        ...options.headers,
         'Accept': 'application/json',
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        ...options.headers,
       }
     });
 
@@ -30,7 +31,7 @@ async function fetchWithRetry(resource: string, options: any = {}, retries = 3):
     return response;
   } catch (err) {
     if (retries > 0) {
-      await new Promise(res => setTimeout(res, 1500));
+      await new Promise(res => setTimeout(res, 1000));
       return fetchWithRetry(resource, options, retries - 1);
     }
     throw new Error('NETWORK_ERROR');
@@ -54,10 +55,8 @@ export const SyncService = {
       const response = await fetchWithRetry(`${BASE_URL}_recs`);
       if (response.status === 404) return [];
       const data = await response.json();
-      if (!Array.isArray(data)) return [];
-      return data;
+      return Array.isArray(data) ? data : [];
     } catch (err) { 
-      // CRITICAL: Se houver erro de rede, lançamos o erro para o App não achar que a lista está vazia
       throw err; 
     }
   },
