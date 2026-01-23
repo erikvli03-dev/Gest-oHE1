@@ -23,12 +23,12 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     setCloudStatus('SYNCING');
     try {
       const remoteUsers = await SyncService.getUsers();
-      localStorage.setItem('users_backup_v13', JSON.stringify(remoteUsers));
+      localStorage.setItem('users_backup_v14', JSON.stringify(remoteUsers));
       setCloudStatus('ONLINE');
       return remoteUsers;
     } catch (err) {
       setCloudStatus('OFFLINE');
-      const local = localStorage.getItem('users_backup_v13');
+      const local = localStorage.getItem('users_backup_v14');
       return local ? JSON.parse(local) : [];
     }
   };
@@ -47,7 +47,6 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     const cleanUsername = username.toLowerCase().trim();
 
     try {
-      // 1. Pega os usuários atuais (nuvem ou local)
       const allUsers: User[] = await syncDatabase();
 
       if (isRegistering) {
@@ -73,19 +72,12 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
         };
         
         const updatedUsers = [...allUsers, newUser];
+        localStorage.setItem('users_backup_v14', JSON.stringify(updatedUsers));
         
-        // 2. Salva LOCAL primeiro (Garante o acesso)
-        localStorage.setItem('users_backup_v13', JSON.stringify(updatedUsers));
-        
-        // 3. Tenta salvar na nuvem
         try {
-          const success = await SyncService.saveUsers(updatedUsers);
-          if (!success) {
-            console.warn("Could not sync user to cloud, but saved locally.");
-            // Não barramos o usuário aqui. Deixamos ele entrar.
-          }
+          await SyncService.saveUsers(updatedUsers);
         } catch {
-          console.warn("Network failure during cloud save, using local fallback.");
+          console.warn("Saving user locally only due to network.");
         }
         
         onLogin(newUser);
@@ -123,7 +115,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             <i className="fa-solid fa-clock-rotate-left"></i>
           </div>
           <h2 className="text-2xl font-black text-slate-900 leading-none">Overtime</h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2 italic">Ailton Souza • v13 Stability</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2 italic">Ailton Souza • v14 Realtime</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
