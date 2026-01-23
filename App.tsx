@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v18_recs';
+  const CACHE_RECS = 'overtime_v19_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -25,6 +25,8 @@ const App: React.FC = () => {
   const pollingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // Limpeza de versions anteriores para evitar conflitos de dados
+    localStorage.removeItem('overtime_v18_recs');
     localStorage.removeItem('overtime_v17_recs');
   }, []);
 
@@ -61,7 +63,7 @@ const App: React.FC = () => {
       if (cached) setRecords(JSON.parse(cached));
       forceSync();
 
-      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 25000) as unknown as number;
+      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 30000) as unknown as number;
     }
     return () => { if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current); };
   }, [user?.username]);
@@ -131,7 +133,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!window.confirm('Excluir?')) return;
+    if (!window.confirm('Excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
     localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
@@ -148,15 +150,15 @@ const App: React.FC = () => {
              <div className="font-black tracking-tighter text-blue-400">HE.INSIGHT</div>
              <div className="flex flex-col">
                 <span className="font-bold">{user.name}</span>
-                <span className="text-[8px] opacity-50 uppercase tracking-widest">{lastSync || 'Sincronizando...'}</span>
+                <span className="text-[8px] opacity-50 uppercase tracking-widest">{lastSync || 'Conectando...'}</span>
              </div>
           </div>
           
           <div className="flex gap-2">
-            <button onClick={() => forceSync()} className="p-2.5 bg-slate-800 rounded-xl">
+            <button onClick={() => forceSync()} className="p-2.5 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors">
               <i className={`fa-solid fa-sync ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
-            <button onClick={handleLogout} className="p-2.5 bg-slate-800 rounded-xl">
+            <button onClick={handleLogout} className="p-2.5 bg-slate-800 rounded-xl hover:bg-red-900 transition-colors">
               <i className="fa-solid fa-power-off"></i>
             </button>
           </div>

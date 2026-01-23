@@ -1,48 +1,40 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Versão 18 - Canal único e limpo para evitar conflitos
-const BUCKET_NAME = 'ailton_overtime_v18_ultra_resilient'; 
+// Versão 19 - Nova rota para evitar filtros de rede do computador
+const BUCKET_NAME = 'ailton_v19_master_sync'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
-async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any, retries = 3): Promise<any> {
-  // O uso de Math.random() e Date.now() em cada chamada garante que o PC não use dados "velhos" do cache
-  const url = `${BASE_URL}_${key}?z=${Math.random().toString(36).substring(2, 15)}&t=${Date.now()}`;
+async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): Promise<any> {
+  // Timestamp para garantir que o computador não use dados antigos (cache)
+  const ts = Date.now();
+  const url = `${BASE_URL}_${key}?cache_bust=${ts}`;
   
-  const headers: HeadersInit = {
-    'Accept': 'application/json',
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0',
+  // Headers simplificados: Menos chance de ser bloqueado por firewalls empresariais
+  const options: RequestInit = {
+    method,
+    mode: 'cors',
+    credentials: 'omit',
+    headers: {
+      'Accept': 'application/json',
+    }
   };
 
   if (data) {
-    headers['Content-Type'] = 'application/json';
+    (options.headers as any)['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(data);
   }
 
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-      const response = await fetch(url, {
-        method,
-        mode: 'cors',
-        headers,
-        body: data ? JSON.stringify(data) : undefined,
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.status === 404) return method === 'GET' ? [] : false;
-      if (!response.ok) throw new Error(`HTTP_${response.status}`);
-      
-      return method === 'GET' ? await response.json() : true;
-    } catch (err) {
-      if (i === retries) throw err;
-      await new Promise(res => setTimeout(res, 800 * (i + 1)));
-    }
+  try {
+    const response = await fetch(url, options);
+    
+    if (response.status === 404) return method === 'GET' ? [] : false;
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    
+    return method === 'GET' ? await response.json() : true;
+  } catch (err) {
+    console.warn(`Erro na chamada ${key}:`, err);
+    throw err;
   }
 }
 
@@ -60,13 +52,10 @@ export const SyncService = {
 
   async saveUsers(users: User[]): Promise<boolean> {
     try {
-      // Tenta salvar
       const success = await apiCall('users', 'PUT', users);
-      if (!success) return false;
-      
-      // Validação: Tenta ler de volta para ter certeza que a nuvem aceitou
-      const check = await this.getUsers();
-      return check.length === users.length;
+      // Pequeno delay para a nuvem processar antes da confirmação
+      await new Promise(r => setTimeout(r, 500));
+      return !!success;
     } catch { return false; }
   },
 
@@ -75,7 +64,8 @@ export const SyncService = {
       const data = await apiCall('users', 'GET');
       return Array.isArray(data) ? data : [];
     } catch { 
-      throw new Error('OFFLINE'); 
+      // Se falhar no computador, lança erro para a UI mostrar "Offline"
+      throw new Error('OFFLINE_ERROR'); 
     }
   }
 };
