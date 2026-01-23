@@ -1,39 +1,39 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// Nova chave v8 para garantir limpeza total e sincronia
-const PROJECT_ID = 'ailton_overtime_v8_final'; 
+// Nova versão v9 com lógica de merge incremental
+const PROJECT_ID = 'ailton_overtime_v9_ultra_stable'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${PROJECT_ID}`;
 
-async function fetchWithRetry(resource: string, options: any = {}, retries = 2): Promise<Response> {
+async function fetchWithRetry(resource: string, options: any = {}, retries = 3): Promise<Response> {
   const url = new URL(resource);
-  url.searchParams.set('force_refresh', Date.now().toString());
+  url.searchParams.set('cb', Date.now().toString());
 
   try {
     const response = await fetch(url.toString(), {
       ...options,
       mode: 'cors',
-      cache: 'no-store', // Crucial: impede o navegador de usar cache antigo
+      cache: 'no-store',
       headers: {
         ...options.headers,
         'Accept': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
+        'Cache-Control': 'no-cache'
       }
     });
 
     if (response.status === 404) return response;
 
-    if (!response.ok && retries > 0) {
-      throw new Error('Retry');
+    if (!response.ok) {
+      if (retries > 0) throw new Error('Retry');
+      return response;
     }
     return response;
   } catch (err) {
     if (retries > 0) {
-      await new Promise(res => setTimeout(res, 1000));
+      await new Promise(res => setTimeout(res, 1500));
       return fetchWithRetry(resource, options, retries - 1);
     }
-    throw err;
+    throw new Error('NETWORK_ERROR');
   }
 }
 
@@ -54,9 +54,11 @@ export const SyncService = {
       const response = await fetchWithRetry(`${BASE_URL}_recs`);
       if (response.status === 404) return [];
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
-    } catch { 
-      return []; 
+      if (!Array.isArray(data)) return [];
+      return data;
+    } catch (err) { 
+      // CRITICAL: Se houver erro de rede, lançamos o erro para o App não achar que a lista está vazia
+      throw err; 
     }
   },
 
@@ -77,8 +79,8 @@ export const SyncService = {
       if (response.status === 404) return [];
       const data = await response.json();
       return Array.isArray(data) ? data : [];
-    } catch {
-      throw new Error('NETWORK_ERROR');
+    } catch (err) {
+      throw err;
     }
   }
 };
