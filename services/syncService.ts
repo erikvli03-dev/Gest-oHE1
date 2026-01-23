@@ -1,22 +1,24 @@
 
 import { OvertimeRecord, User } from '../types';
 
-const PROJECT_ID = 'ailton_overtime_final_v7_stable'; 
+// Nova chave v8 para garantir limpeza total e sincronia
+const PROJECT_ID = 'ailton_overtime_v8_final'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${PROJECT_ID}`;
 
 async function fetchWithRetry(resource: string, options: any = {}, retries = 2): Promise<Response> {
-  // Cache Busting: Adiciona um timestamp para garantir que a rede não use cache
   const url = new URL(resource);
-  url.searchParams.set('cb', Date.now().toString());
+  url.searchParams.set('force_refresh', Date.now().toString());
 
   try {
     const response = await fetch(url.toString(), {
       ...options,
       mode: 'cors',
-      cache: 'no-store',
+      cache: 'no-store', // Crucial: impede o navegador de usar cache antigo
       headers: {
         ...options.headers,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       }
     });
 
@@ -28,7 +30,7 @@ async function fetchWithRetry(resource: string, options: any = {}, retries = 2):
     return response;
   } catch (err) {
     if (retries > 0) {
-      await new Promise(res => setTimeout(res, 800));
+      await new Promise(res => setTimeout(res, 1000));
       return fetchWithRetry(resource, options, retries - 1);
     }
     throw err;
@@ -76,7 +78,7 @@ export const SyncService = {
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     } catch {
-      throw new Error('OFFLINE');
+      throw new Error('NETWORK_ERROR');
     }
   }
 };
