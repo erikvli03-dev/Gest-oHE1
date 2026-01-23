@@ -5,7 +5,6 @@ import OvertimeForm from './components/OvertimeForm';
 import OvertimeList from './components/OvertimeList';
 import DashboardStats from './components/DashboardStats';
 import AuthSystem from './components/AuthSystem';
-import PasswordModal from './components/PasswordModal';
 import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
@@ -22,57 +21,65 @@ const App: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string>('');
   const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const forceSync = async () => {
     setIsSyncing(true);
     try {
+      // Puxa registros
       const cloudRecords = await SyncService.getRecords();
-      if (cloudRecords.length > 0) {
-        setRecords(cloudRecords);
-        localStorage.setItem('overtime_records_cache', JSON.stringify(cloudRecords));
-      }
+      setRecords(cloudRecords);
+      localStorage.setItem('overtime_records_cache', JSON.stringify(cloudRecords));
       
+      // Puxa usuários (para garantir que logins criados em outros locais funcionem)
       const remoteUsers = await SyncService.getUsers();
       if (remoteUsers.length > 0) {
         localStorage.setItem('users_emergency_backup', JSON.stringify(remoteUsers));
       }
+      
+      setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
-      console.warn("Sync falhou, operando local.");
+      console.warn("Sync falhou, operando com dados locais.");
+    } finally {
+      setIsSyncing(false);
     }
-    setIsSyncing(false);
   };
 
   useEffect(() => {
-    const loadData = async () => {
+    const init = async () => {
       setIsLoading(true);
+      // Primeiro carrega o que tem no celular/PC para não ficar branco
       const local = localStorage.getItem('overtime_records_cache');
       if (local) setRecords(JSON.parse(local));
+      
+      // Depois busca na nuvem o que há de novo
       await forceSync();
       setIsLoading(false);
     };
-    loadData();
+    init();
   }, []);
 
   const syncRecords = useCallback(async (newRecords: OvertimeRecord[]) => {
     setRecords(newRecords);
     localStorage.setItem('overtime_records_cache', JSON.stringify(newRecords));
     setIsSyncing(true);
-    await SyncService.saveRecords(newRecords);
+    const success = await SyncService.saveRecords(newRecords);
+    if (success) {
+      setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    }
     setIsSyncing(false);
   }, []);
 
   const handleLogin = (u: User) => {
     sessionStorage.setItem('logged_user', JSON.stringify(u));
     setUser(u);
+    forceSync(); // Sincroniza logo após o login
   };
 
-  const executeLogout = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleLogout = () => {
     sessionStorage.removeItem('logged_user');
-    setUser(null); 
+    setUser(null);
   };
 
   const handleAddRecord = async (data: any) => {
@@ -103,6 +110,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
+    if (!window.confirm('Deseja excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     await syncRecords(updated);
   };
@@ -119,16 +127,24 @@ const App: React.FC = () => {
               {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
             </div>
             <div>
-              <h1 className="font-bold text-sm">Overtime</h1>
-              <p className="text-[10px] text-blue-400 font-black uppercase">{user.name}</p>
+              <h1 className="font-bold text-sm leading-none">Overtime</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[9px] text-blue-400 font-black uppercase">{user.name}</span>
+                {lastSync && <span className="text-[8px] text-slate-500 font-bold tracking-tighter">SINC: {lastSync}</span>}
+              </div>
             </div>
           </div>
           
           <div className="flex gap-2">
-            <button onClick={forceSync} className="p-2.5 bg-slate-800 rounded-xl text-xs border border-slate-700" title="Sincronizar">
-              <i className={`fa-solid fa-sync ${isSyncing ? 'animate-spin' : ''}`}></i>
+            <button 
+              onClick={forceSync} 
+              disabled={isSyncing}
+              className={`p-2.5 rounded-xl text-xs border transition-all ${isSyncing ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-slate-800 border-slate-700 text-white active:bg-slate-700'}`}
+              title="Sincronizar"
+            >
+              <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
-            <button onClick={executeLogout} className="p-2.5 bg-red-900/30 text-red-400 border border-red-900/50 rounded-xl text-xs font-bold">
+            <button onClick={handleLogout} className="p-2.5 bg-red-900/20 text-red-400 border border-red-900/30 rounded-xl text-[10px] font-black tracking-widest active:scale-95 transition-all">
               SAIR
             </button>
           </div>
@@ -136,6 +152,13 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 max-w-6xl mt-6">
+        {isLoading && (
+          <div className="fixed inset-0 bg-slate-50/80 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
+             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+             <p className="text-blue-600 font-black text-[10px] uppercase tracking-widest">Carregando dados da nuvem...</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4">
             <OvertimeForm 
@@ -146,7 +169,9 @@ const App: React.FC = () => {
             />
           </div>
           <div className="lg:col-span-8 space-y-6">
-            {(user.role !== 'EMPLOYEE') && <DashboardStats records={records.filter(r => user.role === 'COORDINATOR' || r.supervisor === user.name)} />}
+            {(user.role !== 'EMPLOYEE') && (
+              <DashboardStats records={records.filter(r => user.role === 'COORDINATOR' || r.supervisor === user.name)} />
+            )}
             <OvertimeList 
               records={records} 
               onDelete={handleDeleteRecord} 
