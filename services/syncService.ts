@@ -1,16 +1,15 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// v28: Novo bucket e limite de timeout para evitar travamentos
-const BUCKET_NAME = 'ailton_v28_emergency'; 
+// v29: Novo bucket para evitar o bloqueio da versão anterior
+const BUCKET_NAME = 'ailton_v29_resilient'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
 async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): Promise<any> {
   const url = `${BASE_URL}_${key}?cache_bust=${Date.now()}`;
   
-  // Cria um controlador para cancelar a requisição se demorar mais de 3 segundos
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 2000); // Timeout mais curto para não travar
 
   try {
     const response = await fetch(url, {
@@ -26,15 +25,17 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      // Se atingiu o limite (429) ou erro de servidor (5xx), retorna nulo para o app seguir em modo local
+    // Se atingiu o limite (429), apenas loga e retorna nulo para o app ignorar
+    if (response.status === 429) {
+      console.warn("Limite de requisições atingido na nuvem.");
       return null;
     }
+
+    if (!response.ok) return null;
     
     return method === 'GET' ? await response.json() : true;
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn("Nuvem atingiu o limite ou está offline. Operando Localmente.");
     return null;
   }
 }
