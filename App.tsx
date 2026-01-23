@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v20_recs';
+  const CACHE_RECS = 'overtime_v21_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -25,9 +25,11 @@ const App: React.FC = () => {
   const pollingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Limpeza de versions anteriores
-    for (let i = 1; i <= 19; i++) {
+    // Limpeza radical de versões antigas para performance
+    for (let i = 1; i <= 20; i++) {
         localStorage.removeItem(`overtime_v${i}_recs`);
+        localStorage.removeItem(`users_v${i}_cache`);
+        localStorage.removeItem(`users_v${i}_final`);
     }
   }, []);
 
@@ -63,7 +65,7 @@ const App: React.FC = () => {
       const cached = localStorage.getItem(CACHE_RECS);
       if (cached) setRecords(JSON.parse(cached));
       forceSync();
-      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 40000) as unknown as number;
+      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 45000) as unknown as number;
     }
     return () => { if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current); };
   }, [user?.username]);
@@ -133,7 +135,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!window.confirm('Excluir este registro permanentemente?')) return;
+    if (!window.confirm('Excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
     localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
@@ -144,29 +146,29 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
-      <header className="bg-slate-900 text-white py-5 sticky top-0 z-[100] shadow-2xl">
+      <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl border-b border-white/10">
         <div className="container mx-auto px-6 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xl font-black">HE</div>
+          <div className="flex items-center gap-3">
+             <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-lg font-black shadow-lg shadow-blue-500/20">HE</div>
              <div className="flex flex-col">
-                <span className="font-black text-sm tracking-tight">{user.name}</span>
-                <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{lastSync ? `Sincronizado: ${lastSync}` : 'Conectando...'}</span>
+                <span className="font-black text-sm tracking-tight leading-none">{user.name}</span>
+                <span className="text-[8px] font-bold text-blue-400 uppercase tracking-widest mt-1">{lastSync ? `Sincronizado: ${lastSync}` : 'Sincronizando...'}</span>
              </div>
           </div>
           
-          <div className="flex gap-3">
-            <button onClick={() => forceSync()} className="w-10 h-10 bg-slate-800 rounded-xl hover:bg-slate-700 transition-all flex items-center justify-center">
-              <i className={`fa-solid fa-sync text-sm ${isSyncing ? 'animate-spin' : ''}`}></i>
+          <div className="flex gap-2">
+            <button onClick={() => forceSync()} className="w-9 h-9 bg-slate-800 rounded-lg hover:bg-slate-700 transition-all flex items-center justify-center">
+              <i className={`fa-solid fa-sync text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
-            <button onClick={handleLogout} className="w-10 h-10 bg-red-600/20 text-red-500 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-center">
-              <i className="fa-solid fa-power-off text-sm"></i>
+            <button onClick={handleLogout} className="w-9 h-9 bg-red-600/10 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-all flex items-center justify-center border border-red-500/20">
+              <i className="fa-solid fa-power-off text-xs"></i>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-6 max-w-6xl mt-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="container mx-auto px-6 max-w-6xl mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4">
             <OvertimeForm 
               onSubmit={editingRecord ? handleUpdateRecord : handleAddRecord} 
@@ -175,7 +177,7 @@ const App: React.FC = () => {
               currentUser={user}
             />
           </div>
-          <div className="lg:col-span-8 space-y-8">
+          <div className="lg:col-span-8 space-y-6">
             {(user.role !== 'EMPLOYEE') && (
               <DashboardStats records={records.filter(r => user.role === 'COORDINATOR' || r.supervisor === user.name)} />
             )}
