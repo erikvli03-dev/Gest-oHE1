@@ -5,15 +5,8 @@ import { OvertimeRecord } from "../types";
 export const analyzeOvertimeTrends = async (records: OvertimeRecord[]) => {
   if (records.length === 0) return "Nenhum dado disponível para análise.";
 
-  // No Vite/Netlify, as variáveis de ambiente podem ser injetadas de formas diferentes.
-  // Tentamos pegar de process.env ou import.meta.env (Vite)
-  const apiKey = (import.meta as any).env?.VITE_API_KEY || process.env.API_KEY;
-
-  if (!apiKey) {
-    return "Erro: Chave de API não configurada no ambiente de publicação.";
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Fix: The API key must be obtained exclusively from process.env.API_KEY and used directly.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const dataSummary = records.map(r => ({
     local: r.location,
@@ -42,6 +35,7 @@ export const analyzeOvertimeTrends = async (records: OvertimeRecord[]) => {
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Fix: Access .text property directly (not a method).
     return response.text;
   } catch (error: any) {
     console.error("Erro na análise da IA:", error);
