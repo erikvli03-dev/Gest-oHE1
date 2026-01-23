@@ -39,7 +39,7 @@ const App: React.FC = () => {
       const cloudRecords = await SyncService.getRecords();
       setRecords(prev => {
         const merged = mergeRecords(prev, cloudRecords);
-        localStorage.setItem('overtime_cache_v15', JSON.stringify(merged));
+        localStorage.setItem('overtime_v16_recs', JSON.stringify(merged));
         return merged;
       });
       setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -53,13 +53,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      const cached = localStorage.getItem('overtime_cache_v15');
+      const cached = localStorage.getItem('overtime_v16_recs');
       if (cached) setRecords(JSON.parse(cached));
       forceSync();
 
       pollingIntervalRef.current = window.setInterval(() => {
         forceSync(true);
-      }, 30000) as unknown as number;
+      }, 45000) as unknown as number; // 45s para evitar sobrecarga em redes lentas
     }
 
     return () => {
@@ -114,7 +114,7 @@ const App: React.FC = () => {
     
     const updated = [newRecord, ...records];
     setRecords(updated);
-    localStorage.setItem('overtime_cache_v15', JSON.stringify(updated));
+    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -123,7 +123,7 @@ const App: React.FC = () => {
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
     const updated = records.map(r => r.id === editingRecord.id ? { ...r, ...data, durationMinutes: duration } : r);
     setRecords(updated);
-    localStorage.setItem('overtime_cache_v15', JSON.stringify(updated));
+    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
     await pushToCloud(updated);
     setEditingRecord(null);
   };
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   const handleUpdateStatus = async (id: string, newStatus: OvertimeStatus) => {
     const updated = records.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setRecords(updated);
-    localStorage.setItem('overtime_cache_v15', JSON.stringify(updated));
+    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -139,7 +139,7 @@ const App: React.FC = () => {
     if (!window.confirm('Deseja excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
-    localStorage.setItem('overtime_cache_v15', JSON.stringify(updated));
+    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -150,13 +150,13 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl border-b border-white/5">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-all ${syncError ? 'bg-amber-500' : 'bg-blue-600'} ${isSyncing ? 'scale-110' : ''}`}>
-              <i className={`fa-solid ${syncError ? 'fa-cloud-arrow-up' : 'fa-clock'} text-white`}></i>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-all ${syncError ? 'bg-red-500' : 'bg-blue-600'} ${isSyncing ? 'scale-110' : ''}`}>
+              <i className={`fa-solid ${syncError ? 'fa-triangle-exclamation' : 'fa-clock-rotate-left'} text-white`}></i>
               {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
             </div>
             <div>
               <h1 className="font-bold text-sm leading-none flex items-center gap-2 uppercase tracking-tight">
-                Overtime
+                Dashboard
                 <span className="bg-blue-500/20 text-blue-400 text-[10px] px-1.5 py-0.5 rounded-md font-black border border-blue-500/30">
                   {records.length}
                 </span>
@@ -166,10 +166,10 @@ const App: React.FC = () => {
                 {lastSync && !syncError && (
                   <span className="text-[8px] text-emerald-400 font-bold uppercase flex items-center gap-1">
                     <span className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse"></span>
-                    Ativo: {lastSync}
+                    Sincronizado: {lastSync}
                   </span>
                 )}
-                {syncError && <span className="text-[8px] text-amber-500 font-bold animate-pulse uppercase">Conectando...</span>}
+                {syncError && <span className="text-[8px] text-red-500 font-bold animate-pulse uppercase">Modo Local (Offline)</span>}
               </div>
             </div>
           </div>
@@ -179,9 +179,9 @@ const App: React.FC = () => {
               onClick={() => forceSync()} 
               disabled={isSyncing}
               className="p-2.5 rounded-xl text-xs bg-slate-800 text-white border border-slate-700 active:scale-90 transition-all shadow-inner"
-              title="Sincronizar Manualmente"
+              title="Atualizar Agora"
             >
-              <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
+              <i className={`fa-solid fa-sync ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
             <button onClick={handleLogout} className="p-2.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-[10px] font-black hover:text-white transition-all">
               SAIR
@@ -192,11 +192,11 @@ const App: React.FC = () => {
 
       <main className="container mx-auto px-4 max-w-6xl mt-6">
         {syncError && (
-          <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl mb-6 flex items-center gap-3 text-amber-800">
-            <i className="fa-solid fa-wifi text-lg animate-pulse"></i>
+          <div className="bg-red-50 border border-red-200 p-4 rounded-3xl mb-6 flex items-center gap-4 text-red-800 shadow-lg">
+            <i className="fa-solid fa-ban text-2xl animate-pulse"></i>
             <div className="flex-1">
-              <p className="text-[11px] font-bold uppercase">Aguardando Nuvem</p>
-              <p className="text-[10px]">O app sincronizará com o PC automaticamente em instantes.</p>
+              <p className="text-[12px] font-black uppercase">Computador sem Acesso à Nuvem</p>
+              <p className="text-[10px] opacity-80">Verifique se o Wi-Fi do computador possui restrições ou tente usar o roteador do celular.</p>
             </div>
           </div>
         )}
