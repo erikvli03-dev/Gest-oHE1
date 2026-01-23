@@ -9,6 +9,8 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
+  const CACHE_RECS = 'overtime_v17_recs';
+  
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
     const saved = sessionStorage.getItem('logged_user');
@@ -22,12 +24,16 @@ const App: React.FC = () => {
   
   const pollingIntervalRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    // Limpeza de versions problemáticas
+    localStorage.removeItem('overtime_v16_recs');
+    localStorage.removeItem('overtime_cache_v15');
+  }, []);
+
   const mergeRecords = (local: OvertimeRecord[], remote: OvertimeRecord[]): OvertimeRecord[] => {
     const map = new Map<string, OvertimeRecord>();
     remote.forEach(r => map.set(r.id, r));
-    local.forEach(l => {
-      if (!map.has(l.id)) map.set(l.id, l);
-    });
+    local.forEach(l => { if (!map.has(l.id)) map.set(l.id, l); });
     return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
   };
 
@@ -39,7 +45,7 @@ const App: React.FC = () => {
       const cloudRecords = await SyncService.getRecords();
       setRecords(prev => {
         const merged = mergeRecords(prev, cloudRecords);
-        localStorage.setItem('overtime_v16_recs', JSON.stringify(merged));
+        localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
         return merged;
       });
       setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -53,29 +59,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      const cached = localStorage.getItem('overtime_v16_recs');
+      const cached = localStorage.getItem(CACHE_RECS);
       if (cached) setRecords(JSON.parse(cached));
       forceSync();
 
-      pollingIntervalRef.current = window.setInterval(() => {
-        forceSync(true);
-      }, 45000) as unknown as number; // 45s para evitar sobrecarga em redes lentas
+      pollingIntervalRef.current = window.setInterval(() => forceSync(true), 30000) as unknown as number;
     }
-
-    return () => {
-      if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current);
-    };
+    return () => { if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current); };
   }, [user?.username]);
 
   const pushToCloud = async (currentLocalRecords: OvertimeRecord[]) => {
     setIsSyncing(true);
     try {
-      let remote: OvertimeRecord[] = [];
-      try { remote = await SyncService.getRecords(); } catch { }
-      
+      const remote = await SyncService.getRecords();
       const finalToSave = mergeRecords(currentLocalRecords, remote);
       const success = await SyncService.saveRecords(finalToSave);
-      
       if (success) {
         setSyncError(false);
         setLastSync(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -111,10 +109,9 @@ const App: React.FC = () => {
       ownerUsername: user.username.toLowerCase().trim(),
       status: 'PENDING'
     };
-    
     const updated = [newRecord, ...records];
     setRecords(updated);
-    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
+    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -123,7 +120,7 @@ const App: React.FC = () => {
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
     const updated = records.map(r => r.id === editingRecord.id ? { ...r, ...data, durationMinutes: duration } : r);
     setRecords(updated);
-    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
+    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
     await pushToCloud(updated);
     setEditingRecord(null);
   };
@@ -131,7 +128,7 @@ const App: React.FC = () => {
   const handleUpdateStatus = async (id: string, newStatus: OvertimeStatus) => {
     const updated = records.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setRecords(updated);
-    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
+    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -139,7 +136,7 @@ const App: React.FC = () => {
     if (!window.confirm('Deseja excluir este registro?')) return;
     const updated = records.filter(r => r.id !== id);
     setRecords(updated);
-    localStorage.setItem('overtime_v16_recs', JSON.stringify(updated));
+    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
     await pushToCloud(updated);
   };
 
@@ -150,8 +147,8 @@ const App: React.FC = () => {
       <header className="bg-slate-900 text-white py-4 sticky top-0 z-[100] shadow-xl border-b border-white/5">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-all ${syncError ? 'bg-red-500' : 'bg-blue-600'} ${isSyncing ? 'scale-110' : ''}`}>
-              <i className={`fa-solid ${syncError ? 'fa-triangle-exclamation' : 'fa-clock-rotate-left'} text-white`}></i>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative shadow-lg transition-all ${syncError ? 'bg-amber-500' : 'bg-blue-600'} ${isSyncing ? 'scale-110' : ''}`}>
+              <i className={`fa-solid ${syncError ? 'fa-cloud-arrow-up' : 'fa-clock-rotate-left'} text-white`}></i>
               {isSyncing && <div className="absolute inset-0 border-2 border-white border-t-transparent rounded-xl animate-spin"></div>}
             </div>
             <div>
@@ -169,19 +166,14 @@ const App: React.FC = () => {
                     Sincronizado: {lastSync}
                   </span>
                 )}
-                {syncError && <span className="text-[8px] text-red-500 font-bold animate-pulse uppercase">Modo Local (Offline)</span>}
+                {syncError && <span className="text-[8px] text-amber-500 font-bold animate-pulse uppercase">Modo Local (Offline)</span>}
               </div>
             </div>
           </div>
           
           <div className="flex gap-2">
-            <button 
-              onClick={() => forceSync()} 
-              disabled={isSyncing}
-              className="p-2.5 rounded-xl text-xs bg-slate-800 text-white border border-slate-700 active:scale-90 transition-all shadow-inner"
-              title="Atualizar Agora"
-            >
-              <i className={`fa-solid fa-sync ${isSyncing ? 'animate-spin' : ''}`}></i>
+            <button onClick={() => forceSync()} disabled={isSyncing} className="p-2.5 rounded-xl text-xs bg-slate-800 text-white border border-slate-700 active:scale-90 transition-all shadow-inner">
+              <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : ''}`}></i>
             </button>
             <button onClick={handleLogout} className="p-2.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-[10px] font-black hover:text-white transition-all">
               SAIR
@@ -191,16 +183,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 max-w-6xl mt-6">
-        {syncError && (
-          <div className="bg-red-50 border border-red-200 p-4 rounded-3xl mb-6 flex items-center gap-4 text-red-800 shadow-lg">
-            <i className="fa-solid fa-ban text-2xl animate-pulse"></i>
-            <div className="flex-1">
-              <p className="text-[12px] font-black uppercase">Computador sem Acesso à Nuvem</p>
-              <p className="text-[10px] opacity-80">Verifique se o Wi-Fi do computador possui restrições ou tente usar o roteador do celular.</p>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4">
             <OvertimeForm 
