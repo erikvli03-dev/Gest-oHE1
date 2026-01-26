@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { OvertimeRecord, User, OvertimeStatus } from './types';
 import OvertimeForm from './components/OvertimeForm';
@@ -160,7 +159,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-[#f8fafc] pb-24 font-sans text-slate-900">
       <header className="bg-slate-900 text-white p-4 sticky top-0 z-[100] shadow-2xl flex justify-between items-center border-b border-white/5 backdrop-blur-lg bg-slate-900/95">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center font-black shadow-lg">HE</div>
+          <div className="w-12 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center font-black shadow-lg text-[10px] tracking-tighter">FIPS</div>
           <div>
             <p className="text-[11px] font-black uppercase tracking-tighter leading-none">{user.name}</p>
             <div className="flex items-center gap-1.5 mt-1">
@@ -172,13 +171,13 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
+          <button onClick={() => forceSync()} disabled={isSyncing} title="Sincronizar Agora" className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
             <i className={`fa-solid fa-arrows-rotate text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
           </button>
-          <button onClick={() => setShowSyncModal(true)} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
+          <button onClick={() => setShowSyncModal(true)} title="Backup e Importação" className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
             <i className="fa-solid fa-cloud-arrow-up text-xs"></i>
           </button>
-          <button onClick={() => { sessionStorage.clear(); setUser(null); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center">
+          <button onClick={() => { sessionStorage.clear(); setUser(null); }} title="Sair" className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center">
             <i className="fa-solid fa-power-off text-xs"></i>
           </button>
         </div>
@@ -210,7 +209,7 @@ const App: React.FC = () => {
             <div className="space-y-4">
               <button onClick={() => {
                 const data = JSON.stringify({ records, v: '37' });
-                const msg = `📊 *BACKUP HE*\n\n*CÓDIGO:* \n${data}`;
+                const msg = `📊 *BACKUP HE FIPS*\n\n*CÓDIGO:* \n${data}`;
                 window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
               }} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3">
                 <i className="fa-brands fa-whatsapp text-xl"></i> Exportar via WhatsApp
