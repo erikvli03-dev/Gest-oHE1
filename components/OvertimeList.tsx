@@ -17,12 +17,22 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
   const [filterStatus, setFilterStatus] = useState<OvertimeStatus | 'ALL'>('ALL');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const resetFilters = () => {
+    setFilterName('');
+    setFilterMonth('');
+    setFilterStatus('ALL');
+  };
+
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
       let isVisible = false;
+      // Normalização para evitar erros de case-sensitive
+      const owner = (r.ownerUsername || '').toLowerCase();
+      const current = (currentUser.username || '').toLowerCase();
+
       if (currentUser.role === 'COORDINATOR') isVisible = true;
       else if (currentUser.role === 'SUPERVISOR') isVisible = r.supervisor === currentUser.name;
-      else isVisible = r.ownerUsername === currentUser.username;
+      else isVisible = owner === current;
 
       if (!isVisible) return false;
 
@@ -32,7 +42,7 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
       let matchesMonth = true;
       if (filterMonth) {
         const [year, month] = filterMonth.split('-');
-        const recordDate = new Date(r.startDate);
+        const recordDate = new Date(r.startDate + 'T12:00:00'); // Evita problemas de timezone
         matchesMonth = recordDate.getFullYear() === parseInt(year) && (recordDate.getMonth() + 1) === parseInt(month);
       }
 
@@ -42,192 +52,90 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
 
   const totalMinutes = filteredRecords.reduce((acc, curr) => acc + curr.durationMinutes, 0);
 
-  const handleExportExcel = () => {
-    const headers = ["Colaborador", "Supervisor", "Local", "Inicio", "Fim", "Duracao (min)", "Motivo", "Status"];
-    const rows = filteredRecords.map(r => [
-      r.employee,
-      r.supervisor,
-      r.location,
-      `${r.startDate} ${r.startTime}`,
-      `${r.endDate} ${r.endTime}`,
-      r.durationMinutes,
-      `"${r.reason.replace(/"/g, '""')}"`, // Escapar aspas para CSV
-      r.status
-    ]);
-
-    const csvContent = [
-      headers.join(";"),
-      ...rows.map(e => e.join(";"))
-    ].join("\n");
-
-    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `relatorio_horas_extras_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const canModify = (record: OvertimeRecord) => {
-    if (currentUser.role === 'COORDINATOR') return true;
-    if (currentUser.role === 'SUPERVISOR' && record.supervisor === currentUser.name) return true;
-    if (record.ownerUsername === currentUser.username && record.status === 'PENDING') return true;
-    return false;
-  };
-
   const getStatusBadge = (status: OvertimeStatus) => {
     switch (status) {
-      case 'PENDING': return <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-200 uppercase">Pendente</span>;
-      case 'APPROVED': return <span className="text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200 uppercase">Aprovado</span>;
-      case 'REJECTED': return <span className="text-[9px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold border border-red-200 uppercase">Recusado</span>;
+      case 'PENDING': return <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-black border border-blue-200 uppercase">Pendente</span>;
+      case 'APPROVED': return <span className="text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black border border-emerald-200 uppercase">Aprovado</span>;
+      case 'REJECTED': return <span className="text-[9px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-black border border-red-200 uppercase">Recusado</span>;
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <i className="fa-solid fa-list-check text-blue-600"></i>
-              Histórico de Lançamentos
-            </h3>
-            <p className="text-xs text-slate-500 font-medium">
-              Filtrado: <span className="font-bold text-blue-600">{formatDuration(totalMinutes)}</span>
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            {(currentUser.role === 'COORDINATOR' || currentUser.role === 'SUPERVISOR') && (
-              <button 
-                onClick={handleExportExcel}
-                className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-xl px-3 py-2 hover:bg-emerald-100 transition-colors flex items-center gap-2"
-              >
-                <i className="fa-solid fa-file-excel"></i>
-                Exportar Excel
-              </button>
-            )}
-            <select 
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 outline-none"
-            >
-              <option value="ALL">Todos os Status</option>
-              <option value="PENDING">Pendentes</option>
-              <option value="APPROVED">Aprovados</option>
-              <option value="REJECTED">Recusados</option>
-            </select>
-          </div>
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter">
+            <i className="fa-solid fa-list-ul text-blue-600"></i> Lançamentos
+          </h3>
+          <p className="text-[10px] bg-slate-100 px-3 py-1 rounded-full font-black text-slate-500">
+            TOTAL: {formatDuration(totalMinutes)}
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            type="text"
-            placeholder="Filtrar colaborador..."
-            value={filterName}
-            onChange={(e) => setFilterName(e.target.value)}
-            className="pl-4 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full outline-none"
-          />
-          <input
-            type="month"
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="pl-4 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full outline-none"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <input type="text" placeholder="Nome..." value={filterName} onChange={e => setFilterName(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none" />
+        </div>
+        
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map(s => (
+            <button key={s} onClick={() => setFilterStatus(s as any)} className={`whitespace-nowrap px-4 py-2 rounded-full text-[9px] font-black uppercase transition-all ${filterStatus === s ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              {s === 'ALL' ? 'Todos' : s === 'PENDING' ? 'Pendentes' : s === 'APPROVED' ? 'Aprovados' : 'Recusados'}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="space-y-3">
         {filteredRecords.length > 0 ? (
           filteredRecords.map(record => (
-            <div key={record.id} className={`bg-white p-5 rounded-2xl border-l-4 shadow-sm hover:shadow-md transition-all ${
-              record.status === 'PENDING' ? 'border-l-blue-500' : 
-              record.status === 'APPROVED' ? 'border-l-emerald-500' : 'border-l-red-500'
-            }`}>
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="flex items-center gap-3 mb-1">
-                    <h4 className="font-bold text-slate-900 leading-tight">{record.employee}</h4>
-                    {getStatusBadge(record.status)}
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Supervisor: {record.supervisor}</p>
+            <div key={record.id} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden active:scale-[0.98] transition-all">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{record.supervisor}</span>
+                  <h4 className="font-black text-slate-900 text-sm leading-tight">{record.employee}</h4>
                 </div>
-                
-                <div className="flex gap-2">
-                  {(currentUser.role === 'COORDINATOR' || currentUser.role === 'SUPERVISOR') && record.status === 'PENDING' && (
-                    <>
-                      <button 
-                        onClick={() => onUpdateStatus(record.id, 'APPROVED')}
-                        className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                        title="Aprovar"
-                      >
-                        <i className="fa-solid fa-check text-xs"></i>
-                      </button>
-                      <button 
-                        onClick={() => onUpdateStatus(record.id, 'REJECTED')}
-                        className="w-8 h-8 rounded-lg bg-red-50 text-red-600 border border-red-100 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm"
-                        title="Recusar"
-                      >
-                        <i className="fa-solid fa-xmark text-xs"></i>
-                      </button>
-                    </>
-                  )}
-                  
-                  {canModify(record) && (
-                    <>
-                      <button 
-                        onClick={() => onEdit(record)} 
-                        className="w-8 h-8 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all"
-                      >
-                        <i className="fa-solid fa-pen text-xs"></i>
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (deletingId === record.id) {
-                            onDelete(record.id);
-                            setDeletingId(null);
-                          } else {
-                            setDeletingId(record.id);
-                            setTimeout(() => setDeletingId(null), 3000);
-                          }
-                        }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                          deletingId === record.id ? 'bg-red-600 text-white' : 'bg-slate-50 text-red-500 border border-slate-200'
-                        }`}
-                      >
-                        <i className={`fa-solid ${deletingId === record.id ? 'fa-question' : 'fa-trash-can'} text-xs`}></i>
-                      </button>
-                    </>
-                  )}
+                {getStatusBadge(record.status)}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                  <span className="text-[8px] text-slate-400 font-black uppercase block">Duração</span>
+                  <span className="text-blue-700 font-black text-xs">{formatDuration(record.durationMinutes)}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                  <span className="text-[8px] text-slate-400 font-black uppercase block">Local</span>
+                  <span className="text-slate-700 font-black text-xs uppercase">{record.location}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Duração</span>
-                  <span className="text-blue-700 font-extrabold text-sm">{formatDuration(record.durationMinutes)}</span>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Local</span>
-                  <span className="text-slate-700 font-bold text-sm">{record.location}</span>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-slate-600 bg-slate-50/50 p-3 rounded-xl border-l-4 border-slate-200 mb-3 italic">
-                {record.reason}
+              <div className="text-[10px] text-slate-600 bg-slate-50 p-3 rounded-2xl mb-3 font-medium italic border-l-2 border-slate-200">
+                "{record.reason}"
               </div>
               
-              <div className="flex justify-between items-center text-[9px] text-slate-400 font-medium">
-                <span>Início: {new Date(record.startDate).toLocaleDateString('pt-BR')} {record.startTime}</span>
-                <span>Fim: {new Date(record.endDate).toLocaleDateString('pt-BR')} {record.endTime}</span>
+              <div className="flex justify-between items-center">
+                <div className="text-[8px] text-slate-400 font-bold uppercase">
+                  {new Date(record.startDate).toLocaleDateString()} {record.startTime} ➔ {record.endTime}
+                </div>
+                
+                <div className="flex gap-1">
+                   {(currentUser.role === 'COORDINATOR' || currentUser.role === 'SUPERVISOR') && record.status === 'PENDING' && (
+                     <button onClick={() => onUpdateStatus(record.id, 'APPROVED')} className="w-7 h-7 bg-emerald-500 text-white rounded-lg flex items-center justify-center text-[10px]"><i className="fa-solid fa-check"></i></button>
+                   )}
+                   {(record.ownerUsername === currentUser.username && record.status === 'PENDING') && (
+                     <button onClick={() => onDelete(record.id)} className="w-7 h-7 bg-slate-100 text-red-500 rounded-lg flex items-center justify-center text-[10px]"><i className="fa-solid fa-trash-can"></i></button>
+                   )}
+                </div>
               </div>
             </div>
           ))
         ) : (
-          <div className="py-12 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
-            <p className="text-slate-400 text-sm font-medium">Nenhum registro para exibir.</p>
+          <div className="py-16 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
+            <i className="fa-solid fa-filter-circle-xmark text-slate-300 text-3xl mb-3"></i>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest px-8">Nenhum registro encontrado com estes filtros</p>
+            {(filterName || filterMonth || filterStatus !== 'ALL') && (
+              <button onClick={resetFilters} className="mt-4 text-blue-600 font-black text-[10px] uppercase underline">Limpar Filtros</button>
+            )}
           </div>
         )}
       </div>

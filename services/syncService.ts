@@ -1,17 +1,17 @@
 
 import { OvertimeRecord, User } from '../types';
 
-const BUCKET_NAME = 'ailton_v30_immortal'; 
+// v32: Novo bucket para evitar bloqueios de IP da versão anterior
+const BUCKET_NAME = 'ailton_v32_pro'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
-// v30: Estado do disjuntor para não insistir em conexões com erro
 let isCloudBlocked = false;
 let lastRetryTime = 0;
 
 function checkCloudStatus(): boolean {
   if (!isCloudBlocked) return true;
   const now = Date.now();
-  if (now - lastRetryTime > 300000) { // Tenta reativar após 5 minutos
+  if (now - lastRetryTime > 60000) { // Bloqueio de 1 minuto apenas
     isCloudBlocked = false;
     return true;
   }
@@ -23,7 +23,7 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 
   const url = `${BASE_URL}_${key}?cb=${Date.now()}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 1500); // Timeout ultra-rápido
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // v32: 8 segundos (mais tolerante)
 
   try {
     const response = await fetch(url, {
@@ -36,10 +36,9 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 
     clearTimeout(timeoutId);
 
-    if (response.status === 429 || response.status >= 500) {
+    if (response.status === 429) {
       isCloudBlocked = true;
       lastRetryTime = Date.now();
-      console.warn("Nuvem bloqueada por limite de tráfego.");
       return null;
     }
 
