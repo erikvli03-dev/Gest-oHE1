@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { COORDINATOR_NAME, SUPERVISORS, EMPLOYEE_HIERARCHY } from '../constants';
 import { SyncService } from '../services/syncService';
@@ -18,6 +18,17 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const CACHE_KEY = 'users_v30_local';
+
+  // v39: Preenchimento automático do nome baseado no cargo
+  useEffect(() => {
+    if (isRegistering) {
+      if (role === 'COORDINATOR') {
+        setName(COORDINATOR_NAME);
+      } else if (role === 'SUPERVISOR' && !name) {
+        setName('');
+      }
+    }
+  }, [role, isRegistering]);
 
   const getLocalUsers = (): User[] => {
     try {
@@ -54,7 +65,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
 
       if (isRegistering) {
         if (allUsers.some((u: User) => u.username === cleanUser)) {
-          setError('Usuário já existe.');
+          setError('USER_EXISTS');
           setIsProcessing(false);
           return;
         }
@@ -62,7 +73,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
         const newUser: User = { 
           username: cleanUser, 
           password: cleanPass, 
-          name: role === 'COORDINATOR' ? COORDINATOR_NAME : (name || cleanUser), 
+          name: name || cleanUser, 
           role,
           supervisorName: role === 'EMPLOYEE' ? selectedSup : undefined
         };
@@ -77,7 +88,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
           localStorage.setItem(CACHE_KEY, JSON.stringify([...localUsers.filter(u => u.username !== user.username), user]));
           onLogin(user);
         } else {
-          setError('Não foi possível validar seu acesso. Se você for novo, crie uma conta. Se o erro persistir, verifique sua internet.');
+          setError('Usuário ou senha incorretos ou erro de conexão.');
         }
       }
     } catch (err) {
@@ -104,15 +115,26 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
-          {error && <div className="bg-red-50 text-red-700 p-4 rounded-xl text-[10px] font-bold border border-red-100 text-center">{error}</div>}
+          {error === 'USER_EXISTS' ? (
+            <div className="bg-amber-50 text-amber-800 p-4 rounded-2xl border border-amber-200 text-center space-y-2">
+              <p className="text-[10px] font-black uppercase">Este usuário já possui cadastro!</p>
+              <button 
+                type="button" 
+                onClick={() => { setIsRegistering(false); setError(''); }}
+                className="bg-amber-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest"
+              >
+                Tentar fazer Login
+              </button>
+            </div>
+          ) : error && (
+            <div className="bg-red-50 text-red-700 p-4 rounded-xl text-[10px] font-bold border border-red-100 text-center">{error}</div>
+          )}
           
-          <input required disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800" value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuário" />
-          <input required type="password" disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha" />
-
           {isRegistering && (
-            <div className="space-y-3 pt-3 border-t">
+            <div className="space-y-3 mb-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase ml-1">Configurações de Perfil</p>
               <select 
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" 
+                className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" 
                 value={role} 
                 onChange={e => {
                   const newRole = e.target.value as UserRole;
@@ -127,14 +149,14 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
               </select>
 
               {role === 'EMPLOYEE' && (
-                <select required className="w-full p-4 bg-blue-50 border border-blue-200 rounded-2xl font-bold text-blue-800" value={selectedSup} onChange={e => setSelectedSup(e.target.value)}>
+                <select required className="w-full p-4 bg-blue-50 border border-blue-200 rounded-2xl font-bold text-blue-800 outline-none" value={selectedSup} onChange={e => setSelectedSup(e.target.value)}>
                   <option value="">Quem é seu Supervisor?</option>
                   {SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               )}
 
-              <select required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" value={name} onChange={e => setName(e.target.value)}>
-                <option value="">Selecione seu nome...</option>
+              <select required className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" value={name} onChange={e => setName(e.target.value)}>
+                <option value="">Seu Nome Oficial...</option>
                 {role === 'COORDINATOR' && <option value={COORDINATOR_NAME}>{COORDINATOR_NAME}</option>}
                 {role === 'SUPERVISOR' && SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
                 {role === 'EMPLOYEE' && (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Escolha o Supervisor primeiro</option>)}
@@ -142,16 +164,21 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             </div>
           )}
 
-          <button type="submit" disabled={isProcessing} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] text-[11px] uppercase tracking-[0.2em] shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all">
+          <div className="space-y-3">
+            <input required disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuário (ex:ailton.souza)" />
+            <input required type="password" disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha" />
+          </div>
+
+          <button type="submit" disabled={isProcessing} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] text-[11px] uppercase tracking-[0.2em] shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all mt-4">
             {isProcessing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-right-to-bracket"></i>}
-            {isRegistering ? 'Cadastrar' : 'Acessar'}
+            {isRegistering ? 'Finalizar Cadastro' : 'Acessar Sistema'}
           </button>
           
-          <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); setName(''); setUsername(''); setPassword(''); }} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-2">
-            {isRegistering ? 'Voltar para Login' : 'Não tem conta? Clique aqui'}
+          <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); setName(''); setUsername(''); setPassword(''); }} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-4">
+            {isRegistering ? 'Voltar para Login' : 'Não tem conta? Clique aqui para Criar'}
           </button>
           
-          <button type="button" onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full text-[9px] text-slate-300 font-bold uppercase mt-6">
+          <button type="button" onClick={() => { if(confirm('Limpar tudo?')) { localStorage.clear(); window.location.reload(); } }} className="w-full text-[9px] text-slate-300 font-bold uppercase mt-8 opacity-50">
             Limpar Cache do Celular
           </button>
         </form>
