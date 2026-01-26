@@ -18,16 +18,14 @@ const App: React.FC = () => {
 
   const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [googleSheetUrl, setGoogleSheetUrl] = useState(() => localStorage.getItem('google_sheet_url') || '');
   const [syncInput, setSyncInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // v37: Mesclagem robusta - prioriza a nuvem mas mantém novos locais
   const mergeRecords = useCallback((cloudData: OvertimeRecord[], localData: OvertimeRecord[]) => {
     const map = new Map();
-    // 1. Verdade da Nuvem
     cloudData.forEach(r => map.set(r.id, r));
-    // 2. Registros locais que ainda não subiram
     localData.forEach(r => {
       if (!map.has(r.id)) map.set(r.id, r);
     });
@@ -62,13 +60,8 @@ const App: React.FC = () => {
       if (cached) {
         try { setRecords(JSON.parse(cached)); } catch { setRecords([]); }
       }
-      
       forceSync();
-
-      const interval = setInterval(() => {
-        forceSync(true);
-      }, 15000); // 15 segundos para resposta rápida nos testes
-
+      const interval = setInterval(() => forceSync(true), 20000);
       return () => clearInterval(interval);
     }
   }, [user?.username, forceSync]);
@@ -87,20 +80,22 @@ const App: React.FC = () => {
     };
 
     try {
-      // CICLO ATÔMICO: Busca -> Mescla -> Salva
+      // 1. Enviar para a Planilha Google (Modo Forms)
+      if (googleSheetUrl) {
+        SyncService.pushToGoogleSheet(newRecord);
+      }
+
+      // 2. Fluxo Normal do App
       const latestCloud = await SyncService.getRecords();
       const currentList = latestCloud !== null ? latestCloud : records;
       const updatedList = mergeRecords(currentList, [newRecord, ...records]);
       
       setRecords(updatedList);
       localStorage.setItem(CACHE_RECS, JSON.stringify(updatedList));
-      
-      const success = await SyncService.saveRecords(updatedList);
-      if (!success) {
-        alert("Aviso: O registro está salvo localmente mas falhou ao subir para a nuvem. Ele subirá na próxima tentativa automática.");
-      }
+      await SyncService.saveRecords(updatedList);
       
       if ('vibrate' in navigator) navigator.vibrate(50);
+      alert("Registro enviado com sucesso!");
     } catch (err) {
       console.error(err);
     } finally {
@@ -114,19 +109,18 @@ const App: React.FC = () => {
       const latestCloud = await SyncService.getRecords();
       const base = latestCloud !== null ? latestCloud : records;
       const updated = base.map(r => r.id === id ? {...r, status: s} : r);
-      
       setRecords(updated);
       localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
       await SyncService.saveRecords(updated);
     } catch (e) {
-      alert("Erro ao atualizar status na nuvem.");
+      alert("Erro ao atualizar.");
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!confirm('Excluir permanentemente?')) return;
+    if (!confirm('Excluir?')) return;
     setIsSyncing(true);
     try {
       const latestCloud = await SyncService.getRecords();
@@ -136,21 +130,16 @@ const App: React.FC = () => {
       localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
       await SyncService.saveRecords(updated);
     } catch (e) {
-      alert("Erro ao deletar.");
+      alert("Erro.");
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleDataImport = (data: any) => {
-    if (!data || !data.records) return;
-    const merged = mergeRecords(data.records, records);
-    setRecords(merged);
-    localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
-    SyncService.saveRecords(merged).then(() => {
-      alert(`Dados Importados!`);
-      setShowSyncModal(false);
-    });
+  const saveGoogleConfig = () => {
+    localStorage.setItem('google_sheet_url', googleSheetUrl);
+    alert("Configuração de Planilha Salva!");
+    setShowSyncModal(false);
   };
 
   if (!user) return <AuthSystem onLogin={u => { setUser(u); sessionStorage.setItem('logged_user', JSON.stringify(u)); }} />;
@@ -165,19 +154,19 @@ const App: React.FC = () => {
             <div className="flex items-center gap-1.5 mt-1">
               <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-400 animate-pulse' : (SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500')}`}></div>
               <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">
-                {isSyncing ? 'Atualizando...' : (lastSyncInfo ? lastSyncInfo : 'Conectado')}
+                {isSyncing ? 'Sincronizando...' : (lastSyncInfo ? lastSyncInfo : 'Pronto')}
               </p>
             </div>
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => forceSync()} disabled={isSyncing} title="Sincronizar Agora" className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
+          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
             <i className={`fa-solid fa-arrows-rotate text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
           </button>
-          <button onClick={() => setShowSyncModal(true)} title="Backup e Importação" className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
-            <i className="fa-solid fa-cloud-arrow-up text-xs"></i>
+          <button onClick={() => setShowSyncModal(true)} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
+            <i className="fa-solid fa-gear text-xs"></i>
           </button>
-          <button onClick={() => { sessionStorage.clear(); setUser(null); }} title="Sair" className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center">
+          <button onClick={() => { sessionStorage.clear(); setUser(null); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center">
             <i className="fa-solid fa-power-off text-xs"></i>
           </button>
         </div>
@@ -185,13 +174,11 @@ const App: React.FC = () => {
 
       <main className="p-4 max-w-5xl mx-auto space-y-6">
         <OvertimeForm onSubmit={handleAddRecord} currentUser={user} />
-        
         {user.role !== 'EMPLOYEE' && <DashboardStats records={records} />}
-        
         <div className="space-y-4">
           <div className="flex items-center gap-2 px-2">
             <div className="h-px flex-1 bg-slate-200"></div>
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Registros de HE</span>
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Histórico Recente</span>
             <div className="h-px flex-1 bg-slate-200"></div>
           </div>
           <OvertimeList records={records} onDelete={handleDeleteRecord} onUpdateStatus={handleUpdateStatus} currentUser={user} onEdit={()=>{}} />
@@ -200,22 +187,36 @@ const App: React.FC = () => {
 
       {showSyncModal && (
         <div className="fixed inset-0 bg-slate-950/95 z-[200] p-4 flex items-center justify-center backdrop-blur-xl">
-          <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl p-8 border border-slate-200">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Sincronização Manual</h3>
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Configurações Avançadas</h3>
               <button onClick={() => setShowSyncModal(false)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
             </div>
             
-            <div className="space-y-4">
-              <button onClick={() => {
-                const data = JSON.stringify({ records, v: '37' });
-                const msg = `📊 *BACKUP HE FIPS*\n\n*CÓDIGO:* \n${data}`;
-                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
-              }} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3">
-                <i className="fa-brands fa-whatsapp text-xl"></i> Exportar via WhatsApp
-              </button>
-              <textarea value={syncInput} onChange={e => setSyncInput(e.target.value)} placeholder="Cole o código aqui..." className="w-full h-32 bg-slate-50 border border-slate-200 p-4 text-[9px] font-mono rounded-2xl resize-none" />
-              <button onClick={() => { try { handleDataImport(JSON.parse(syncInput)); } catch { alert('Inválido!'); } }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest">Importar</button>
+            <div className="space-y-6">
+              {user.role === 'COORDINATOR' && (
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <label className="block text-[10px] font-black text-blue-600 uppercase mb-2">URL da Planilha Google (Apps Script)</label>
+                  <input 
+                    type="text" 
+                    value={googleSheetUrl} 
+                    onChange={e => setGoogleSheetUrl(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/..."
+                    className="w-full p-3 bg-white border border-blue-200 rounded-xl text-[10px] outline-none font-mono"
+                  />
+                  <button onClick={saveGoogleConfig} className="w-full mt-3 bg-blue-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase">Salvar Planilha</button>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <p className="text-[9px] font-bold text-slate-400 uppercase">Backup Manual de Segurança</p>
+                <button onClick={() => {
+                  const data = JSON.stringify({ records });
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`📊 *BACKUP FIPS*\n\n${data}`)}`, '_blank');
+                }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2">
+                  <i className="fa-brands fa-whatsapp text-lg"></i> Exportar via WhatsApp
+                </button>
+              </div>
             </div>
           </div>
         </div>
