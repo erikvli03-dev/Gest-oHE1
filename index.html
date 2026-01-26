@@ -17,6 +17,13 @@
       }
       input, textarea, select {
         user-select: text;
+        box-sizing: border-box;
+      }
+      /* v34: Força os inputs de data/hora a respeitarem o container no PC */
+      input[type="date"], input[type="time"] {
+        min-width: 0 !important;
+        width: 100% !important;
+        display: block;
       }
       ::-webkit-scrollbar {
         display: none;

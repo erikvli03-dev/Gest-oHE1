@@ -67,24 +67,24 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
     <form onSubmit={handleSubmit} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-6">
       <div className="flex items-center justify-between border-b border-slate-100 pb-4">
         <div className="flex flex-col">
-          <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter">
-            <i className={`fa-solid ${initialData ? 'fa-pen-to-square' : 'fa-plus-circle'} text-blue-600`}></i>
-            {initialData ? 'Editar Registro' : 'Lançar Hora Extra'}
+          <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter text-blue-600">
+            <i className={`fa-solid ${initialData ? 'fa-pen-to-square' : 'fa-clock-rotate-left'}`}></i>
+            {initialData ? 'Editar Registro' : 'Lançar Horas Extras'}
           </h2>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Supervisor</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Supervisor Responsável</label>
             <select
               name="supervisor"
               required
               disabled={isFieldDisabled('supervisor')}
               value={formData.supervisor}
               onChange={handleChange}
-              className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-60 outline-none transition-all"
+              className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-60 outline-none transition-all appearance-none"
             >
               <option value="">Selecione...</option>
               {SUPERVISORS.map(sup => <option key={sup} value={sup}>{sup}</option>)}
@@ -92,14 +92,14 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Colaborador</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Colaborador em HE</label>
             <select
               name="employee"
               required
               disabled={isFieldDisabled('employee')}
               value={formData.employee}
               onChange={handleChange}
-              className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-60 outline-none transition-all"
+              className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-60 outline-none transition-all appearance-none"
             >
               <option value="">Selecione...</option>
               {availableEmployees.map(emp => <option key={emp} value={emp}>{emp}</option>)}
@@ -108,39 +108,76 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
         </div>
 
         <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Local</label>
+          <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Local da Atividade</label>
           <select 
             name="location" 
             required 
             value={formData.location} 
             onChange={handleChange} 
-            className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
           >
             {Object.values(Location).map(loc => <option key={loc} value={loc}>{loc}</option>)}
           </select>
         </div>
 
-        {/* v33: Layout corrigido para Data/Hora */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-slate-50 p-4 rounded-[2rem] border border-slate-100">
-            <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Início da Jornada</label>
-            <div className="grid grid-cols-5 gap-2">
-              <input type="date" name="startDate" required value={formData.startDate} onChange={handleChange} className="col-span-3 border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-1 focus:ring-blue-400" />
-              <input type="time" name="startTime" required value={formData.startTime} onChange={handleChange} className="col-span-2 border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-1 focus:ring-blue-400" />
+        {/* v34: Novo layout de Data/Hora à prova de bugs */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100">
+            <label className="block text-[10px] font-black text-slate-500 uppercase mb-3 ml-1">Início do Período</label>
+            <div className="flex flex-row gap-2">
+              <div className="flex-[3] min-w-0">
+                <input 
+                  type="date" 
+                  name="startDate" 
+                  required 
+                  value={formData.startDate} 
+                  onChange={handleChange} 
+                  className="w-full border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                />
+              </div>
+              <div className="flex-[2] min-w-0">
+                <input 
+                  type="time" 
+                  name="startTime" 
+                  required 
+                  value={formData.startTime} 
+                  onChange={handleChange} 
+                  className="w-full border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                />
+              </div>
             </div>
           </div>
           
-          <div className="bg-slate-50 p-4 rounded-[2rem] border border-slate-100">
-            <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Término da Jornada</label>
-            <div className="grid grid-cols-5 gap-2">
-              <input type="date" name="endDate" required min={formData.startDate} value={formData.endDate} onChange={handleChange} className="col-span-3 border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-1 focus:ring-blue-400" />
-              <input type="time" name="endTime" required value={formData.endTime} onChange={handleChange} className="col-span-2 border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-1 focus:ring-blue-400" />
+          <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100">
+            <label className="block text-[10px] font-black text-slate-500 uppercase mb-3 ml-1">Término do Período</label>
+            <div className="flex flex-row gap-2">
+              <div className="flex-[3] min-w-0">
+                <input 
+                  type="date" 
+                  name="endDate" 
+                  required 
+                  min={formData.startDate} 
+                  value={formData.endDate} 
+                  onChange={handleChange} 
+                  className="w-full border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                />
+              </div>
+              <div className="flex-[2] min-w-0">
+                <input 
+                  type="time" 
+                  name="endTime" 
+                  required 
+                  value={formData.endTime} 
+                  onChange={handleChange} 
+                  className="w-full border border-slate-200 rounded-xl py-2.5 px-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                />
+              </div>
             </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Motivo Justificado</label>
+          <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Motivo / Observações</label>
           <textarea 
             name="reason" 
             required 
@@ -148,7 +185,7 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
             value={formData.reason} 
             onChange={handleChange} 
             className="w-full border border-slate-200 bg-slate-50 rounded-2xl py-3 px-4 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-            placeholder="Descreva o motivo..."
+            placeholder="Justifique a necessidade das horas extras..."
           ></textarea>
         </div>
       </div>
@@ -156,10 +193,10 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
       <div className="flex gap-3 pt-2">
         <button 
           type="submit" 
-          className="flex-1 bg-blue-600 shadow-lg shadow-blue-500/20 text-white font-black py-4 rounded-2xl text-[11px] uppercase tracking-widest hover:bg-blue-700 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+          className="flex-1 bg-slate-900 shadow-xl text-white font-black py-4 rounded-2xl text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all transform active:scale-95 flex items-center justify-center gap-2"
         >
-          <i className="fa-solid fa-check"></i>
-          Confirmar Lançamento
+          <i className="fa-solid fa-paper-plane text-[10px]"></i>
+          Finalizar Lançamento
         </button>
         {onCancel && (
           <button 
@@ -167,7 +204,7 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
             onClick={onCancel} 
             className="bg-slate-100 text-slate-500 px-6 rounded-2xl font-black text-[10px] uppercase hover:bg-slate-200 transition-colors"
           >
-            Sair
+            Cancelar
           </button>
         )}
       </div>
