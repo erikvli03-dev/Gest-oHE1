@@ -1,8 +1,8 @@
 
 import { OvertimeRecord, User } from '../types';
 
-// v36: Novo bucket e lógica de erro aprimorada
-const BUCKET_NAME = 'ailton_v36_final'; 
+// v37: Bucket definitivo para produção
+const BUCKET_NAME = 'ailton_v37_prod'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
 let isCloudBlocked = false;
@@ -11,7 +11,7 @@ let lastRetryTime = 0;
 function checkCloudStatus(): boolean {
   if (!isCloudBlocked) return true;
   const now = Date.now();
-  if (now - lastRetryTime > 30000) { // Bloqueio reduzido para 30s
+  if (now - lastRetryTime > 30000) { 
     isCloudBlocked = false;
     return true;
   }
@@ -23,7 +23,7 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 
   const url = `${BASE_URL}_${key}?cb=${Date.now()}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // v36: 15 segundos para redes instáveis
+  const timeoutId = setTimeout(() => controller.abort(), 12000); 
 
   try {
     const response = await fetch(url, {
@@ -42,7 +42,6 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
       return null;
     }
 
-    // v36: KVDB retorna 404 se a chave nunca foi criada. Tratamos como vazio [], não como erro null.
     if (response.status === 404) return method === 'GET' ? [] : null;
 
     if (!response.ok) return null;
@@ -50,7 +49,7 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
   } catch (err) {
     clearTimeout(timeoutId);
     console.error(`Erro na API (${key}):`, err);
-    return null; // Erro real de rede
+    return null;
   }
 }
 
@@ -61,7 +60,7 @@ export const SyncService = {
   },
   async getRecords(): Promise<OvertimeRecord[] | null> {
     const data = await apiCall('recs', 'GET');
-    return data; // Retorna null se falhou, [] se vazio
+    return data;
   },
   async saveUsers(users: User[]): Promise<boolean> {
     return !!(await apiCall('users', 'PUT', users));
