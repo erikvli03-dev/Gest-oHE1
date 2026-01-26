@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { User } from '../types';
 import { SyncService } from '../services/syncService';
@@ -40,7 +39,16 @@ const PasswordModal: React.FC<PasswordModalProps> = ({ user, onClose, onSuccess 
     }
 
     try {
-      const users: User[] = await SyncService.getUsers();
+      const usersResponse = await SyncService.getUsers();
+      
+      if (!usersResponse) {
+        setError('Não foi possível carregar os dados da nuvem para atualizar a senha.');
+        setIsSaving(false);
+        return;
+      }
+
+      // v37: Garante que estamos manipulando uma cópia da lista
+      const users = [...usersResponse];
       const userIndex = users.findIndex(u => u.username === user.username);
       
       if (userIndex !== -1) {
@@ -53,13 +61,13 @@ const PasswordModal: React.FC<PasswordModalProps> = ({ user, onClose, onSuccess 
           alert('Senha alterada com sucesso em todos os seus dispositivos!');
           onClose();
         } else {
-          setError('Erro de conexão ao salvar nova senha.');
+          setError('Erro de conexão ao salvar nova senha na nuvem.');
         }
       } else {
-        setError('Usuário não encontrado no sistema remoto.');
+        setError('Usuário não encontrado no banco de dados remoto.');
       }
     } catch (err) {
-      setError('Erro ao sincronizar com a nuvem.');
+      setError('Erro crítico ao sincronizar com a nuvem.');
     } finally {
       setIsSaving(false);
     }
