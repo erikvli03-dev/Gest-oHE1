@@ -81,7 +81,6 @@ const App: React.FC = () => {
 
     try {
       if (googleSheetUrl) {
-        // Agora envia como Form Data
         await SyncService.pushToGoogleSheet(newRecord);
       }
 
@@ -144,17 +143,26 @@ const App: React.FC = () => {
   const handleTestSheet = async () => {
     if (!googleSheetUrl) return alert("Insira uma URL primeiro.");
     setIsTestingSheet(true);
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    // v42: Envia dados completos para evitar o erro de "undefined" na planilha
     const success = await SyncService.pushToGoogleSheet({ 
       employee: "TESTE DE SISTEMA", 
-      supervisor: user?.name || "N/A",
-      reason: "Teste de conexão com o App FIPS",
+      supervisor: user?.name || "Ailton Souza",
+      coordinator: "Ailton Souza",
+      reason: "Teste de conexão FIPS OK",
       location: "SANTOS",
+      startDate: today,
+      startTime: "08:00",
+      endDate: today,
+      endTime: "09:00",
       durationMinutes: 60,
+      status: "PENDING",
       createdAt: Date.now() 
     });
-    // Como é no-cors, o fetch não retorna erro mesmo que a URL esteja errada (ele é 'opaco').
-    // Mas o envio terá ocorrido se a URL estiver correta.
-    alert("Comando de envio executado. Verifique se apareceu uma nova linha na planilha agora.");
+
+    alert("Comando enviado! Se a URL estiver certa, uma linha sem erros aparecerá na sua planilha agora.");
     setIsTestingSheet(false);
   };
 

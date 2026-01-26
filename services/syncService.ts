@@ -1,6 +1,6 @@
 import { OvertimeRecord, User } from '../types';
 
-// v41: Bucket para persistência interna
+// v42: Bucket para persistência interna
 const BUCKET_NAME = 'ailton_v37_prod'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
@@ -55,8 +55,7 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 export const SyncService = {
   isCloudReady: () => !isCloudBlocked,
   
-  // v41: Envia para a Planilha Google como Form Data (URLSearchParams)
-  // Este formato é o mais compatível com Google Apps Script doPost(e) { e.parameter }
+  // v42: Envia para a Planilha Google com mapeamento robusto (PT/EN)
   async pushToGoogleSheet(record: any): Promise<boolean> {
     const sheetUrl = localStorage.getItem('google_sheet_url');
     if (!sheetUrl) return false;
@@ -64,22 +63,47 @@ export const SyncService = {
     try {
       const formData = new URLSearchParams();
       
-      // Mapeia todos os campos para o formato de formulário
-      Object.keys(record).forEach(key => {
-        formData.append(key, String(record[key]));
-      });
+      // Mapeia campos originais garantindo que não envie a string "undefined"
+      const safeGet = (val: any) => (val === undefined || val === null) ? "" : String(val);
+
+      // Envia em Inglês (compatível com o script anterior)
+      formData.append('employee', safeGet(record.employee));
+      formData.append('supervisor', safeGet(record.supervisor));
+      formData.append('coordinator', safeGet(record.coordinator));
+      formData.append('location', safeGet(record.location));
+      formData.append('startDate', safeGet(record.startDate));
+      formData.append('startTime', safeGet(record.startTime));
+      formData.append('endDate', safeGet(record.endDate));
+      formData.append('endTime', safeGet(record.endTime));
+      formData.append('reason', safeGet(record.reason));
+      formData.append('status', safeGet(record.status));
+      formData.append('durationMinutes', safeGet(record.durationMinutes));
+
+      // Envia em Português (para facilitar novos scripts)
+      formData.append('colaborador', safeGet(record.employee));
+      formData.append('local', safeGet(record.location));
+      formData.append('inicio_data', safeGet(record.startDate));
+      formData.append('inicio_hora', safeGet(record.startTime));
+      formData.append('fim_data', safeGet(record.endDate));
+      formData.append('fim_hora', safeGet(record.endTime));
+      formData.append('motivo', safeGet(record.reason));
       
-      // Adiciona campos formatados extras
-      formData.append('data_hora_envio', new Date().toLocaleString('pt-BR'));
+      // Campos calculados e formatados
+      const now = new Date();
+      formData.append('timestamp', now.toLocaleString('pt-BR'));
+      
       if (record.durationMinutes) {
         const h = Math.floor(record.durationMinutes / 60);
         const m = record.durationMinutes % 60;
         formData.append('duracao_formatada', `${h}:${m.toString().padStart(2, '0')}`);
+      } else {
+        formData.append('duracao_formatada', "0:00");
       }
 
+      // Envio via no-cors para Google Apps Script
       await fetch(sheetUrl, {
         method: 'POST',
-        mode: 'no-cors', // Crucial para evitar erro de CORS no navegador
+        mode: 'no-cors',
         cache: 'no-cache',
         body: formData
       });
