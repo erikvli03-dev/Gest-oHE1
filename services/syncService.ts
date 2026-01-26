@@ -19,37 +19,54 @@ function checkCloudStatus(): boolean {
 
 async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): Promise<any> {
   if (!checkCloudStatus()) return null;
-  const url = `${BASE_URL}_${key}?cb=${Date.now()}`;
+  const url = `${BASE_URL}_${key}`;
+  const fetchUrl = method === 'GET' ? `${url}?cb=${Date.now()}` : url;
+  
   try {
-    const response = await fetch(url, {
+    const response = await fetch(fetchUrl, {
       method,
       mode: 'cors',
       headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       body: data ? JSON.stringify(data) : undefined,
     });
+    
     if (response.status === 429) { isCloudBlocked = true; lastRetryTime = Date.now(); return null; }
-    if (response.status === 404) return method === 'GET' ? [] : null;
+    if (response.status === 404) {
+      // Retorna array vazio apenas para listas, senão null para objetos como 'config'
+      return (key === 'recs' || key === 'users') ? [] : null;
+    }
+    
     return method === 'GET' ? await response.json() : true;
-  } catch (err) { return null; }
+  } catch (err) { 
+    console.error(`Falha na API (${key}):`, err);
+    return null; 
+  }
 }
 
 export const SyncService = {
   isCloudReady: () => !isCloudBlocked,
   
   async pushToGoogleSheet(record: OvertimeRecord, action: 'INSERT' | 'UPDATE' | 'DELETE' = 'INSERT'): Promise<boolean> {
+    // Tenta atualizar a URL do cache/localstorage antes de enviar
     if (!cachedSheetUrl) {
+      cachedSheetUrl = localStorage.getItem('google_sheet_url');
+    }
+
+    if (!cachedSheetUrl) {
+      console.log("URL não encontrada localmente, buscando na nuvem...");
       const config = await this.getConfig();
       if (config?.googleSheetUrl) {
         cachedSheetUrl = config.googleSheetUrl;
-        localStorage.setItem('google_sheet_url', cachedSheetUrl!);
       }
     }
 
-    if (!cachedSheetUrl) return false;
+    if (!cachedSheetUrl) {
+      console.error("Configuração de planilha ausente. O Coordenador precisa definir a URL.");
+      return false;
+    }
 
     try {
       const formData = new URLSearchParams();
-      // Mapeamento que garante o envio dos campos solicitados
       formData.append('action', action);
       formData.append('id', record.id);
       formData.append('coordenador', record.coordinator || "Ailton Souza");
@@ -68,21 +85,22 @@ export const SyncService = {
       formData.append('duracao_fmt', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
 
-      await fetch(cachedSheetUrl!, {
+      const response = await fetch(cachedSheetUrl!, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
       });
-      return true;
+      
+      return true; // no-cors sempre retorna opaque response, assumimos sucesso se não houve exceção
     } catch (e) { 
-      console.error("Erro no push:", e);
+      console.error("Erro no push para Google Sheets:", e);
       return false; 
     }
   },
 
   async saveConfig(config: any): Promise<boolean> { 
-    if (config.googleSheetUrl) {
+    if (config?.googleSheetUrl) {
       cachedSheetUrl = config.googleSheetUrl;
       localStorage.setItem('google_sheet_url', config.googleSheetUrl);
     }
@@ -90,12 +108,20 @@ export const SyncService = {
   },
   
   async getConfig(): Promise<any> { 
-    const config = await apiCall('config', 'GET');
-    if (config?.googleSheetUrl) {
-      cachedSheetUrl = config.googleSheetUrl;
-      localStorage.setItem('google_sheet_url', config.googleSheetUrl);
+    const cloudConfig = await apiCall('config', 'GET');
+    
+    // Validação robusta do objeto de configuração vindo da nuvem
+    if (cloudConfig && typeof cloudConfig === 'object' && !Array.isArray(cloudConfig) && cloudConfig.googleSheetUrl) {
+      cachedSheetUrl = cloudConfig.googleSheetUrl;
+      localStorage.setItem('google_sheet_url', cloudConfig.googleSheetUrl);
+      return cloudConfig;
     }
-    return config;
+    
+    // Fallback para o que já estiver salvo no celular
+    const local = localStorage.getItem('google_sheet_url');
+    if (local) return { googleSheetUrl: local };
+    
+    return null;
   },
 
   async saveRecords(records: OvertimeRecord[]): Promise<boolean> { return !!(await apiCall('recs', 'PUT', records)); },

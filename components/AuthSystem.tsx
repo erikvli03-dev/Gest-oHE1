@@ -148,7 +148,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
               >
                 <option value="">Seu Nome Oficial...</option>
                 {role === 'COORDINATOR' && <option value={COORDINATOR_NAME}>{COORDINATOR_NAME}</option>}
-                {role === 'SUPERVISOR' && SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
+                {role === 'SUPERVISOR' && SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>}
                 {role === 'EMPLOYEE' && (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Escolha o Supervisor primeiro</option>)}
               </select>
             </div>
