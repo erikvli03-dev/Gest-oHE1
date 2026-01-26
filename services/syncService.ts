@@ -42,16 +42,20 @@ export const SyncService = {
 
     try {
       const formData = new URLSearchParams();
+      // Mapeamento explícito para o Script do Google
       formData.append('action', action);
       formData.append('id', record.id);
-      formData.append('colaborador', record.employee);
-      formData.append('supervisor', record.supervisor);
-      formData.append('local', record.location);
-      formData.append('inicio_data', record.startDate);
-      formData.append('inicio_hora', record.startTime);
-      formData.append('fim_data', record.endDate);
-      formData.append('fim_hora', record.endTime);
-      formData.append('motivo', record.reason);
+      formData.append('colaborador', record.employee || "");
+      formData.append('supervisor', record.supervisor || "");
+      formData.append('local', record.location || "");
+      
+      // Use os nomes originais do objeto record para evitar confusão no script
+      formData.append('startDate', record.startDate || "");
+      formData.append('startTime', record.startTime || "");
+      formData.append('endDate', record.endDate || "");
+      formData.append('endTime', record.endTime || "");
+      
+      formData.append('motivo', record.reason || "");
       formData.append('obs', record.observations || "");
       
       const h = Math.floor(record.durationMinutes / 60);
@@ -59,13 +63,22 @@ export const SyncService = {
       formData.append('duracao_formatada', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
 
+      // Log para debug no console do navegador
+      console.log("Enviando para Planilha:", Object.fromEntries(formData));
+
       await fetch(sheetUrl, {
         method: 'POST',
         mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
         body: formData
       });
       return true;
-    } catch (e) { return false; }
+    } catch (e) { 
+      console.error("Erro no fetch da planilha:", e);
+      return false; 
+    }
   },
 
   async saveConfig(config: any): Promise<boolean> { return !!(await apiCall('config', 'PUT', config)); },

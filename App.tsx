@@ -80,7 +80,10 @@ const App: React.FC = () => {
       await SyncService.saveRecords(updatedList);
       setEditingRecord(null);
       alert("Sucesso!");
-    } catch (err) { alert("Erro ao sincronizar."); }
+    } catch (err) { 
+      console.error(err);
+      alert("Lançado no celular, mas erro ao enviar para a planilha. Verifique a URL do Script."); 
+    }
   };
 
   const handleDeleteRecord = async (id: string) => {
@@ -109,7 +112,9 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-1.5">
           {user.role === 'COORDINATOR' && (
-            <button onClick={async () => { setIsAnalyzing(true); setAiReport(await analyzeOvertimeTrends(records)); setIsAnalyzing(false); }} className="w-9 h-9 bg-purple-600 rounded-lg flex items-center justify-center text-xs shadow-lg"><i className="fa-solid fa-wand-magic-sparkles"></i></button>
+            <button onClick={async () => { setIsAnalyzing(true); setAiReport(await analyzeOvertimeTrends(records)); setIsAnalyzing(false); }} className="w-9 h-9 bg-purple-600 rounded-lg flex items-center justify-center text-xs shadow-lg">
+              {isAnalyzing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-wand-magic-sparkles"></i>}
+            </button>
           )}
           <button onClick={() => setShowPasswordModal(true)} className="w-9 h-9 bg-slate-800 rounded-lg flex items-center justify-center text-xs"><i className="fa-solid fa-user-lock"></i></button>
           <button onClick={() => setShowSyncModal(true)} className="w-9 h-9 bg-slate-800 rounded-lg flex items-center justify-center text-xs"><i className="fa-solid fa-gear"></i></button>
@@ -128,9 +133,12 @@ const App: React.FC = () => {
       {aiReport && (
         <div className="fixed inset-0 bg-slate-950/90 z-[300] p-6 flex items-center justify-center backdrop-blur-md">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8">
-            <h3 className="font-black text-slate-900 uppercase text-xs mb-4">Análise IA</h3>
-            <div className="bg-slate-50 p-6 rounded-3xl text-xs leading-relaxed italic">{aiReport}</div>
-            <button onClick={() => setAiReport(null)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-[10px] uppercase mt-6">Fechar</button>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-black text-slate-900 uppercase text-xs">Análise Inteligente</h3>
+              <i className="fa-solid fa-robot text-purple-600"></i>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-3xl text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">{aiReport}</div>
+            <button onClick={() => setAiReport(null)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-[10px] uppercase mt-6">Entendido</button>
           </div>
         </div>
       )}
@@ -138,10 +146,11 @@ const App: React.FC = () => {
       {showSyncModal && (
         <div className="fixed inset-0 bg-slate-950/95 z-[200] p-4 flex items-center justify-center backdrop-blur-xl">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8">
-            <h3 className="font-black text-slate-900 uppercase text-xs mb-4">Configurações</h3>
-            <input type="text" value={googleSheetUrl} onChange={e => setGoogleSheetUrl(e.target.value)} placeholder="URL do Script..." className="w-full p-4 bg-slate-50 border rounded-2xl text-[10px] outline-none mb-4" />
+            <h3 className="font-black text-slate-900 uppercase text-xs mb-4">Configuração da Planilha</h3>
+            <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">Insira a URL do Script do Google Apps Script para sincronizar os dados em tempo real.</p>
+            <input type="text" value={googleSheetUrl} onChange={e => setGoogleSheetUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..." className="w-full p-4 bg-slate-50 border rounded-2xl text-[10px] outline-none mb-4 font-mono" />
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { localStorage.setItem('google_sheet_url', googleSheetUrl); SyncService.saveConfig({googleSheetUrl}); alert("Salvo!"); }} className="bg-blue-600 text-white py-4 rounded-xl font-bold text-[10px] uppercase">Salvar URL</button>
+              <button onClick={() => { localStorage.setItem('google_sheet_url', googleSheetUrl); SyncService.saveConfig({googleSheetUrl}); alert("Configuração salva!"); }} className="bg-blue-600 text-white py-4 rounded-xl font-bold text-[10px] uppercase">Salvar</button>
               <button onClick={() => setShowSyncModal(false)} className="bg-slate-100 text-slate-500 py-4 rounded-xl font-bold text-[10px] uppercase">Fechar</button>
             </div>
           </div>
