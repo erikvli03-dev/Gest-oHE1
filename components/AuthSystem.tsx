@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { COORDINATOR_NAME, SUPERVISORS, EMPLOYEE_HIERARCHY } from '../constants';
@@ -18,7 +19,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const CACHE_KEY = 'users_v30_local';
-  const APP_VERSION = "v46.0.0-final"; // v46: Versão final com CRUD completo e sem aprovação
+  const APP_VERSION = "v46.0.0-final"; 
 
   useEffect(() => {
     if (isRegistering && role === 'COORDINATOR') {

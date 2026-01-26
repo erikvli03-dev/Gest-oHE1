@@ -2,10 +2,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { OvertimeRecord } from "../types";
 
+/**
+ * Service to analyze overtime records using Gemini.
+ * Note: process.env.API_KEY is assumed to be available.
+ */
 export const analyzeOvertimeTrends = async (records: OvertimeRecord[]) => {
   if (records.length === 0) return "Nenhum dado disponível para análise.";
 
-  // Fix: The API key must be obtained exclusively from process.env.API_KEY and used directly.
+  // Use process.env.API_KEY directly as per SDK requirements.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const dataSummary = records.map(r => ({
@@ -14,7 +18,6 @@ export const analyzeOvertimeTrends = async (records: OvertimeRecord[]) => {
     colaborador: r.employee,
     duracao: r.durationMinutes,
     motivo: r.reason,
-    status: r.status,
     data: r.startDate
   }));
 
@@ -24,22 +27,22 @@ export const analyzeOvertimeTrends = async (records: OvertimeRecord[]) => {
 
     Retorne:
     1. Motivo principal da semana.
-    2. Supervisor com mais horas pendentes.
+    2. Supervisor com mais volume.
     3. Uma dica rápida para reduzir custos.
 
     Seja extremamente breve.
   `;
 
   try {
+    // Basic text tasks use gemini-3-flash-preview.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // Fix: Access .text property directly (not a method).
-    return response.text;
+    // Extract text from property (not method call).
+    return response.text || "Análise concluída sem texto.";
   } catch (error: any) {
     console.error("Erro na análise da IA:", error);
-    if (!navigator.onLine) return "Sem conexão com a internet. A análise de IA requer rede ativa.";
-    return "A IA está temporariamente indisponível. Verifique as configurações de rede.";
+    return "IA temporariamente indisponível.";
   }
 };
