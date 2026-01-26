@@ -49,27 +49,24 @@ export const SyncService = {
 
     try {
       const formData = new URLSearchParams();
-      // Garantindo strings limpas e nomes idênticos ao Script
-      formData.append('action', String(action));
-      formData.append('id', String(record.id || ""));
-      formData.append('coordenador', String(record.coordinator || "Ailton Souza"));
-      formData.append('colaborador', String(record.employee || "Não Identificado"));
-      formData.append('supervisor', String(record.supervisor || "Não Identificado"));
-      formData.append('local', String(record.location || ""));
-      formData.append('startDate', String(record.startDate || ""));
-      formData.append('startTime', String(record.startTime || ""));
-      formData.append('endDate', String(record.endDate || ""));
-      formData.append('endTime', String(record.endTime || ""));
-      formData.append('motivo', String(record.reason || ""));
-      formData.append('obs', String(record.observations || ""));
+      // Mapeamento que garante o envio dos campos solicitados
+      formData.append('action', action);
+      formData.append('id', record.id);
+      formData.append('coordenador', record.coordinator || "Ailton Souza");
+      formData.append('colaborador', record.employee);
+      formData.append('supervisor', record.supervisor);
+      formData.append('local', record.location);
+      formData.append('startDate', record.startDate);
+      formData.append('startTime', record.startTime);
+      formData.append('endDate', record.endDate);
+      formData.append('endTime', record.endTime);
+      formData.append('motivo', record.reason);
+      formData.append('obs', record.observations || "");
       
       const h = Math.floor(record.durationMinutes / 60);
       const m = record.durationMinutes % 60;
       formData.append('duracao_fmt', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
-
-      // Console log para você debugar se necessário (F12 no navegador)
-      console.log("Enviando para planilha:", Object.fromEntries(formData));
 
       await fetch(cachedSheetUrl!, {
         method: 'POST',
@@ -79,7 +76,7 @@ export const SyncService = {
       });
       return true;
     } catch (e) { 
-      console.error("Erro fatal no push:", e);
+      console.error("Erro no push:", e);
       return false; 
     }
   },
