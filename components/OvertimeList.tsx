@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { OvertimeRecord, User, OvertimeStatus } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -16,35 +15,39 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
   const [filterMonth, setFilterMonth] = useState('');
   const [filterStatus, setFilterStatus] = useState<OvertimeStatus | 'ALL'>('ALL');
 
+  // Fix: Added missing resetFilters function to clear search and filter criteria
   const resetFilters = () => {
     setFilterName('');
     setFilterMonth('');
     setFilterStatus('ALL');
   };
 
+  const normalize = (str: string) => 
+    (str || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
       let isVisible = false;
       
-      const recordOwner = (r.ownerUsername || '').toLowerCase().trim();
-      const currentUsername = (currentUser.username || '').toLowerCase().trim();
-      const recordSupervisor = (r.supervisor || '').toLowerCase().trim();
-      const currentUserName = (currentUser.name || '').toLowerCase().trim();
+      const recordOwner = normalize(r.ownerUsername);
+      const currentUsername = normalize(currentUser.username);
+      const recordSupervisor = normalize(r.supervisor);
+      const currentUserName = normalize(currentUser.name);
 
-      // v35: Lógica de visibilidade refinada
+      // v36: Visibilidade com normalização rigorosa
       if (currentUser.role === 'COORDINATOR') {
         isVisible = true;
       } else if (currentUser.role === 'SUPERVISOR') {
-        // Supervisor vê o que ele lançou OU o que foi lançado para ele
+        // Supervisor vê o que ele é o supervisor designado
         isVisible = recordSupervisor === currentUserName;
       } else {
-        // Colaborador só vê o que ele mesmo é dono
+        // Colaborador vê o que ele mesmo lançou
         isVisible = recordOwner === currentUsername;
       }
 
       if (!isVisible) return false;
 
-      const matchesName = r.employee.toLowerCase().includes(filterName.toLowerCase());
+      const matchesName = normalize(r.employee).includes(normalize(filterName));
       const matchesStatus = filterStatus === 'ALL' || r.status === filterStatus;
       
       let matchesMonth = true;
@@ -134,13 +137,13 @@ const OvertimeList: React.FC<OvertimeListProps> = ({ records, onDelete, onEdit, 
                 </div>
                 
                 <div className="flex gap-1.5">
-                   {(currentUser.role === 'COORDINATOR' || (currentUser.role === 'SUPERVISOR' && record.supervisor === currentUser.name)) && record.status === 'PENDING' && (
+                   {(currentUser.role === 'COORDINATOR' || (currentUser.role === 'SUPERVISOR' && normalize(record.supervisor) === normalize(currentUser.name))) && record.status === 'PENDING' && (
                      <>
                        <button onClick={() => onUpdateStatus(record.id, 'APPROVED')} className="w-8 h-8 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center text-xs hover:bg-emerald-600 transition-colors"><i className="fa-solid fa-check"></i></button>
                        <button onClick={() => onUpdateStatus(record.id, 'REJECTED')} className="w-8 h-8 bg-red-500 text-white rounded-xl shadow-lg shadow-red-500/20 flex items-center justify-center text-xs hover:bg-red-600 transition-colors"><i className="fa-solid fa-xmark"></i></button>
                      </>
                    )}
-                   {(record.ownerUsername === currentUser.username && record.status === 'PENDING') && (
+                   {(normalize(record.ownerUsername) === normalize(currentUser.username) && record.status === 'PENDING') && (
                      <button onClick={() => onDelete(record.id)} className="w-8 h-8 bg-slate-100 text-red-500 rounded-xl flex items-center justify-center text-xs hover:bg-red-50 transition-colors border border-red-100"><i className="fa-solid fa-trash-can"></i></button>
                    )}
                 </div>

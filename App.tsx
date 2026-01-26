@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v35_recs';
+  const CACHE_RECS = 'overtime_v36_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -17,17 +17,18 @@ const App: React.FC = () => {
     try { return saved ? JSON.parse(saved) : null; } catch { return null; }
   });
 
-  const [lastSync, setLastSync] = useState<string>('');
+  const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncInput, setSyncInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // v35: Função de mesclagem robusta
+  // v36: Função de mesclagem que prioriza o ID mas garante unicidade
   const mergeRecords = useCallback((cloudData: OvertimeRecord[], localData: OvertimeRecord[]) => {
     const map = new Map();
-    // Prioridade para o que está na nuvem, mas mantém IDs locais novos
+    // Primeiro colocamos os locais (que podem ser novos/não sincronizados)
     localData.forEach(r => map.set(r.id, r));
+    // Depois os da nuvem (que são a verdade absoluta atualizada)
     cloudData.forEach(r => map.set(r.id, r));
     return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
   }, []);
@@ -38,14 +39,16 @@ const App: React.FC = () => {
     
     try {
       const cloudRecords = await SyncService.getRecords();
-      if (cloudRecords && Array.isArray(cloudRecords)) {
+      // v36: Só atualizamos se a resposta não for null (erro de rede)
+      if (cloudRecords !== null) {
         setRecords(prev => {
           const merged = mergeRecords(cloudRecords, prev);
           localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
           return merged;
         });
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setLastSyncInfo(`${time} (${cloudRecords.length} recs)`);
       }
-      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
       console.warn("Falha na sincronização.");
     } finally {
@@ -53,19 +56,17 @@ const App: React.FC = () => {
     }
   }, [user, isSyncing, mergeRecords]);
 
-  // v35: Loop de atualização automática (Background Sync)
   useEffect(() => {
     if (user) {
-      // Carrega cache inicial
       const cached = localStorage.getItem(CACHE_RECS);
       if (cached) {
         try { setRecords(JSON.parse(cached)); } catch { setRecords([]); }
       }
       
-      forceSync(); // Sync inicial
+      forceSync();
 
       const interval = setInterval(() => {
-        forceSync(true); // Sync silencioso a cada 30s
+        forceSync(true);
       }, 30000);
 
       return () => clearInterval(interval);
@@ -86,17 +87,25 @@ const App: React.FC = () => {
     };
 
     try {
-      // v35: Ciclo Read-Modify-Write para garantir que não apague dados de outros
+      // v36: Read-Modify-Write Robusto
       const latestCloud = await SyncService.getRecords();
-      const updatedList = mergeRecords(latestCloud, [newRecord, ...records]);
       
-      setRecords(updatedList);
-      localStorage.setItem(CACHE_RECS, JSON.stringify(updatedList));
-      await SyncService.saveRecords(updatedList);
+      if (latestCloud === null) {
+        // Se a nuvem falhou, salvamos localmente e avisamos
+        const newList = [newRecord, ...records];
+        setRecords(newList);
+        localStorage.setItem(CACHE_RECS, JSON.stringify(newList));
+        alert("Aviso: Falha ao conectar na nuvem. O registro está salvo apenas neste celular até a próxima sincronização.");
+      } else {
+        const updatedList = mergeRecords(latestCloud, [newRecord, ...records]);
+        setRecords(updatedList);
+        localStorage.setItem(CACHE_RECS, JSON.stringify(updatedList));
+        await SyncService.saveRecords(updatedList);
+      }
       
       if ('vibrate' in navigator) navigator.vibrate(50);
     } catch (err) {
-      alert("Erro ao salvar na nuvem. O registro ficou salvo apenas neste aparelho.");
+      console.error("Erro ao adicionar:", err);
     } finally {
       setIsSaving(false);
     }
@@ -106,12 +115,16 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const latestCloud = await SyncService.getRecords();
-      const updated = mergeRecords(latestCloud, records).map(r => 
-        r.id === id ? {...r, status: s} : r
-      );
-      setRecords(updated);
-      localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-      await SyncService.saveRecords(updated);
+      if (latestCloud !== null) {
+        const updated = mergeRecords(latestCloud, records).map(r => 
+          r.id === id ? {...r, status: s} : r
+        );
+        setRecords(updated);
+        localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
+        await SyncService.saveRecords(updated);
+      } else {
+        alert("Não foi possível atualizar o status. Verifique sua conexão.");
+      }
     } catch (e) {
       alert("Erro ao atualizar status na nuvem.");
     } finally {
@@ -124,10 +137,12 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const latestCloud = await SyncService.getRecords();
-      const updated = latestCloud.filter((r: any) => r.id !== id);
-      setRecords(updated);
-      localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-      await SyncService.saveRecords(updated);
+      if (latestCloud !== null) {
+        const updated = latestCloud.filter((r: any) => r.id !== id);
+        setRecords(updated);
+        localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
+        await SyncService.saveRecords(updated);
+      }
     } catch (e) {
       alert("Erro ao deletar na nuvem.");
     } finally {
@@ -158,13 +173,13 @@ const App: React.FC = () => {
             <div className="flex items-center gap-1.5 mt-1">
               <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-400 animate-pulse' : (SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500')}`}></div>
               <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">
-                {isSyncing ? 'Sincronizando...' : (lastSync ? `Atualizado ${lastSync}` : 'Conectado')}
+                {isSyncing ? 'Sincronizando...' : (lastSyncInfo ? `Sinc: ${lastSyncInfo}` : 'Conectado')}
               </p>
             </div>
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center border border-white/5 active:scale-90 transition-all disabled:opacity-50">
+          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center border border-white/5 active:scale-90 transition-all disabled:opacity-50 relative">
             <i className={`fa-solid fa-arrows-rotate text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
           </button>
           <button onClick={() => setShowSyncModal(true)} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center border border-white/5 active:scale-90 transition-all">
@@ -176,10 +191,10 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {isSaving && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest z-[150] shadow-2xl flex items-center gap-3 border border-white/10 animate-in fade-in zoom-in duration-300">
-          <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
-          Gravando na Nuvem...
+      {isSyncing && !lastSyncInfo && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest z-[150] shadow-xl flex items-center gap-2">
+          <i className="fa-solid fa-spinner animate-spin"></i>
+          Buscando na Nuvem...
         </div>
       )}
 
@@ -211,8 +226,8 @@ const App: React.FC = () => {
             
             <div className="space-y-4">
               <button onClick={() => {
-                const data = JSON.stringify({ records, v: '35', sender: user.name });
-                const msg = `📊 *BACKUP HE v35*\n\nColaborador: ${user.name}\n\n*DATA:* ${new Date().toLocaleString()}\n\n*CÓDIGO:* \n${data}`;
+                const data = JSON.stringify({ records, v: '36', sender: user.name });
+                const msg = `📊 *BACKUP HE v36*\n\nColaborador: ${user.name}\n\n*DATA:* ${new Date().toLocaleString()}\n\n*CÓDIGO:* \n${data}`;
                 window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
               }} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 active:scale-95 transition-all">
                 <i className="fa-brands fa-whatsapp text-xl"></i> Exportar via WhatsApp
