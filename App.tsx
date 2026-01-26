@@ -1,11 +1,14 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { OvertimeRecord, User, OvertimeStatus } from './types';
 import OvertimeForm from './components/OvertimeForm';
 import OvertimeList from './components/OvertimeList';
 import DashboardStats from './components/DashboardStats';
 import AuthSystem from './components/AuthSystem';
+import PasswordModal from './components/PasswordModal';
 import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
+import { analyzeOvertimeTrends } from './services/geminiService';
 
 const App: React.FC = () => {
   const CACHE_RECS = 'overtime_v37_recs';
@@ -18,157 +21,78 @@ const App: React.FC = () => {
 
   const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [googleSheetUrl, setGoogleSheetUrl] = useState(() => localStorage.getItem('google_sheet_url') || '');
-  const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isTestingSheet, setIsTestingSheet] = useState(false);
-
-  const mergeRecords = useCallback((cloudData: OvertimeRecord[], localData: OvertimeRecord[]) => {
-    const map = new Map();
-    cloudData.forEach(r => map.set(r.id, r));
-    localData.forEach(r => {
-      if (!map.has(r.id)) map.set(r.id, r);
-    });
-    return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
-  }, []);
+  const [editingRecord, setEditingRecord] = useState<OvertimeRecord | null>(null);
+  
+  const [aiReport, setAiReport] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const forceSync = useCallback(async (silent = false) => {
     if (!user) return;
     if (!silent) setIsSyncing(true);
-    
     try {
-      // 1. Sincroniza Configurações (URL da Planilha)
       const cloudConfig = await SyncService.getConfig();
-      if (cloudConfig && cloudConfig.googleSheetUrl) {
+      if (cloudConfig?.googleSheetUrl) {
         setGoogleSheetUrl(cloudConfig.googleSheetUrl);
         localStorage.setItem('google_sheet_url', cloudConfig.googleSheetUrl);
       }
-
-      // 2. Sincroniza Registros
       const cloudRecords = await SyncService.getRecords();
       if (cloudRecords !== null) {
-        setRecords(prev => {
-          const merged = mergeRecords(cloudRecords, prev);
-          localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
-          return merged;
-        });
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setLastSyncInfo(`${time} (${cloudRecords.length} registros)`);
+        setRecords(cloudRecords);
+        localStorage.setItem(CACHE_RECS, JSON.stringify(cloudRecords));
+        setLastSyncInfo(`${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} OK`);
       }
-    } catch (e) {
-      console.warn("Sincronização falhou.");
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [user, mergeRecords]);
+    } catch (e) { console.warn("Sync fail"); } finally { setIsSyncing(false); }
+  }, [user]);
 
   useEffect(() => {
     if (user) {
       const cached = localStorage.getItem(CACHE_RECS);
-      if (cached) {
-        try { setRecords(JSON.parse(cached)); } catch { setRecords([]); }
-      }
+      if (cached) setRecords(JSON.parse(cached));
       forceSync();
-      const interval = setInterval(() => forceSync(true), 20000);
+      const interval = setInterval(() => forceSync(true), 30000);
       return () => clearInterval(interval);
     }
   }, [user?.username, forceSync]);
 
-  const handleAddRecord = async (data: any) => {
-    setIsSaving(true);
+  const handleAddOrEditRecord = async (data: any) => {
     const duration = calculateDuration(data.startDate, data.startTime, data.endDate, data.endTime);
-
+    
     const newRecord: OvertimeRecord = {
       ...data,
-      id: `r_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: Date.now(),
+      id: editingRecord ? editingRecord.id : `r_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: editingRecord ? editingRecord.createdAt : Date.now(),
       durationMinutes: duration,
       ownerUsername: user!.username,
-      status: 'PENDING'
+      status: 'REGISTERED' as OvertimeStatus
     };
 
     try {
-      if (googleSheetUrl) {
-        await SyncService.pushToGoogleSheet(newRecord);
-      }
-
-      const latestCloud = await SyncService.getRecords();
-      const currentList = latestCloud !== null ? latestCloud : records;
-      const updatedList = mergeRecords(currentList, [newRecord, ...records]);
+      await SyncService.pushToGoogleSheet(newRecord, editingRecord ? 'UPDATE' : 'INSERT');
+      const updatedList = editingRecord 
+        ? records.map(r => r.id === editingRecord.id ? newRecord : r)
+        : [newRecord, ...records];
       
       setRecords(updatedList);
       localStorage.setItem(CACHE_RECS, JSON.stringify(updatedList));
       await SyncService.saveRecords(updatedList);
-      
-      if ('vibrate' in navigator) navigator.vibrate(50);
-      alert("Registro enviado com sucesso!");
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao salvar, mas os dados foram guardados localmente.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleUpdateStatus = async (id: string, s: OvertimeStatus) => {
-    setIsSyncing(true);
-    try {
-      const latestCloud = await SyncService.getRecords();
-      const base = latestCloud !== null ? latestCloud : records;
-      const updated = base.map(r => r.id === id ? {...r, status: s} : r);
-      setRecords(updated);
-      localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-      await SyncService.saveRecords(updated);
-    } catch (e) {
-      alert("Erro ao atualizar.");
-    } finally {
-      setIsSyncing(false);
-    }
+      setEditingRecord(null);
+      alert("Sucesso!");
+    } catch (err) { alert("Erro ao sincronizar."); }
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!confirm('Excluir?')) return;
-    setIsSyncing(true);
+    if (!confirm('Excluir permanentemente?')) return;
     try {
-      const latestCloud = await SyncService.getRecords();
-      const base = latestCloud !== null ? latestCloud : records;
-      const updated = base.filter((r: any) => r.id !== id);
+      const record = records.find(r => r.id === id);
+      if (record) await SyncService.pushToGoogleSheet(record, 'DELETE');
+      const updated = records.filter(r => r.id !== id);
       setRecords(updated);
       localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
       await SyncService.saveRecords(updated);
-    } catch (e) {
-      alert("Erro.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const saveGoogleConfig = async () => {
-    localStorage.setItem('google_sheet_url', googleSheetUrl);
-    await SyncService.saveConfig({ googleSheetUrl });
-    alert("Configuração salva na nuvem para toda a coordenação!");
-  };
-
-  const handleTestSheet = async () => {
-    if (!googleSheetUrl) return alert("Insira uma URL primeiro.");
-    setIsTestingSheet(true);
-    const today = new Date().toISOString().split('T')[0];
-    await SyncService.pushToGoogleSheet({ 
-      employee: "TESTE V44 CLOUD", 
-      supervisor: user?.name || "N/A",
-      coordinator: "Ailton Souza",
-      reason: "Sincronização Cloud OK",
-      location: "SANTOS",
-      startDate: today,
-      startTime: "12:00",
-      endDate: today,
-      endTime: "13:00",
-      durationMinutes: 60,
-      status: "PENDING",
-      createdAt: Date.now() 
-    });
-    alert("Teste enviado! Verifique sua planilha.");
-    setIsTestingSheet(false);
+    } catch (e) { alert("Erro ao excluir."); }
   };
 
   if (!user) return <AuthSystem onLogin={u => { setUser(u); sessionStorage.setItem('logged_user', JSON.stringify(u)); }} />;
@@ -177,87 +101,48 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-[#f8fafc] pb-24 font-sans text-slate-900">
       <header className="bg-slate-900 text-white p-4 sticky top-0 z-[100] shadow-2xl flex justify-between items-center border-b border-white/5 backdrop-blur-lg bg-slate-900/95">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center font-black shadow-lg text-[10px] tracking-tighter">FIPS</div>
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-black shadow-lg text-[10px]">FIPS</div>
           <div>
-            <p className="text-[11px] font-black uppercase tracking-tighter leading-none">{user.name}</p>
-            <div className="flex items-center gap-1.5 mt-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-400 animate-pulse' : (SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500')}`}></div>
-              <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">
-                {isSyncing ? 'Sincronizando...' : (lastSyncInfo ? lastSyncInfo : 'Pronto')}
-              </p>
-            </div>
+            <p className="text-[10px] font-black uppercase tracking-tighter leading-none">{user.name}</p>
+            <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest mt-1">{lastSyncInfo || 'Conectado'}</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
-            <i className={`fa-solid fa-arrows-rotate text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
-          </button>
-          <button onClick={() => setShowSyncModal(true)} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
-            <i className="fa-solid fa-gear text-xs"></i>
-          </button>
-          <button onClick={() => { sessionStorage.clear(); setUser(null); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center">
-            <i className="fa-solid fa-power-off text-xs"></i>
-          </button>
+        <div className="flex gap-1.5">
+          {user.role === 'COORDINATOR' && (
+            <button onClick={async () => { setIsAnalyzing(true); setAiReport(await analyzeOvertimeTrends(records)); setIsAnalyzing(false); }} className="w-9 h-9 bg-purple-600 rounded-lg flex items-center justify-center text-xs shadow-lg"><i className="fa-solid fa-wand-magic-sparkles"></i></button>
+          )}
+          <button onClick={() => setShowPasswordModal(true)} className="w-9 h-9 bg-slate-800 rounded-lg flex items-center justify-center text-xs"><i className="fa-solid fa-user-lock"></i></button>
+          <button onClick={() => setShowSyncModal(true)} className="w-9 h-9 bg-slate-800 rounded-lg flex items-center justify-center text-xs"><i className="fa-solid fa-gear"></i></button>
+          <button onClick={() => { sessionStorage.clear(); setUser(null); }} className="w-9 h-9 bg-red-500/20 text-red-500 rounded-lg flex items-center justify-center text-xs"><i className="fa-solid fa-power-off"></i></button>
         </div>
       </header>
 
-      <main className="p-4 max-w-5xl mx-auto space-y-6">
-        <OvertimeForm onSubmit={handleAddRecord} currentUser={user} />
+      <main className="p-4 max-w-4xl mx-auto space-y-6">
+        <OvertimeForm onSubmit={handleAddOrEditRecord} initialData={editingRecord} onCancel={editingRecord ? () => setEditingRecord(null) : undefined} currentUser={user} />
         {user.role !== 'EMPLOYEE' && <DashboardStats records={records} />}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 px-2">
-            <div className="h-px flex-1 bg-slate-200"></div>
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Histórico Recente</span>
-            <div className="h-px flex-1 bg-slate-200"></div>
-          </div>
-          <OvertimeList records={records} onDelete={handleDeleteRecord} onUpdateStatus={handleUpdateStatus} currentUser={user} onEdit={()=>{}} />
-        </div>
+        <OvertimeList records={records} onDelete={handleDeleteRecord} onEdit={setEditingRecord} onUpdateStatus={()=>{}} currentUser={user} />
       </main>
+
+      {showPasswordModal && <PasswordModal user={user} onClose={() => setShowPasswordModal(false)} onSuccess={u => { setUser(u); sessionStorage.setItem('logged_user', JSON.stringify(u)); }} />}
+
+      {aiReport && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[300] p-6 flex items-center justify-center backdrop-blur-md">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8">
+            <h3 className="font-black text-slate-900 uppercase text-xs mb-4">Análise IA</h3>
+            <div className="bg-slate-50 p-6 rounded-3xl text-xs leading-relaxed italic">{aiReport}</div>
+            <button onClick={() => setAiReport(null)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-[10px] uppercase mt-6">Fechar</button>
+          </div>
+        </div>
+      )}
 
       {showSyncModal && (
         <div className="fixed inset-0 bg-slate-950/95 z-[200] p-4 flex items-center justify-center backdrop-blur-xl">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-200">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Configurações</h3>
-              <button onClick={() => setShowSyncModal(false)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <div className="space-y-6">
-              {(user.role === 'COORDINATOR' || user.role === 'SUPERVISOR') && (
-                <div className="p-5 bg-blue-50 rounded-[2rem] border border-blue-100 space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-blue-600 uppercase mb-2 ml-1">Integração Google Sheets</label>
-                    <input 
-                      type="text" 
-                      value={googleSheetUrl} 
-                      onChange={e => setGoogleSheetUrl(e.target.value)}
-                      placeholder="URL do Apps Script (Web App)..."
-                      className="w-full p-4 bg-white border border-blue-200 rounded-2xl text-[10px] outline-none font-mono focus:ring-2 focus:ring-blue-400"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={saveGoogleConfig} className="bg-blue-600 text-white py-4 rounded-xl font-bold text-[10px] uppercase shadow-lg active:scale-95 transition-all">Salvar URL</button>
-                    <button 
-                      onClick={handleTestSheet} 
-                      disabled={isTestingSheet}
-                      className="bg-white border border-blue-200 text-blue-600 py-4 rounded-xl font-bold text-[10px] uppercase active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      {isTestingSheet ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-vial"></i>}
-                      Testar Agora
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <p className="text-[9px] font-bold text-slate-400 uppercase ml-1">Segurança</p>
-                <button onClick={() => {
-                  const data = JSON.stringify({ records });
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`📊 *BACKUP FIPS*\n\n${data}`)}`, '_blank');
-                }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2 shadow-lg">
-                  <i className="fa-brands fa-whatsapp text-lg"></i> Backup WhatsApp
-                </button>
-              </div>
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8">
+            <h3 className="font-black text-slate-900 uppercase text-xs mb-4">Configurações</h3>
+            <input type="text" value={googleSheetUrl} onChange={e => setGoogleSheetUrl(e.target.value)} placeholder="URL do Script..." className="w-full p-4 bg-slate-50 border rounded-2xl text-[10px] outline-none mb-4" />
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => { localStorage.setItem('google_sheet_url', googleSheetUrl); SyncService.saveConfig({googleSheetUrl}); alert("Salvo!"); }} className="bg-blue-600 text-white py-4 rounded-xl font-bold text-[10px] uppercase">Salvar URL</button>
+              <button onClick={() => setShowSyncModal(false)} className="bg-slate-100 text-slate-500 py-4 rounded-xl font-bold text-[10px] uppercase">Fechar</button>
             </div>
           </div>
         </div>

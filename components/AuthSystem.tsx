@@ -18,7 +18,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const CACHE_KEY = 'users_v30_local';
-  const APP_VERSION = "v44.0.0-gold"; // v44: Versão com Sincronização de Configurações
+  const APP_VERSION = "v45.0.0-ai"; // v45: Inteligência Artificial habilitada
 
   useEffect(() => {
     if (isRegistering && role === 'COORDINATOR') {

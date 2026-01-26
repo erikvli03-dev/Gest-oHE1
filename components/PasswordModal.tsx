@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User } from '../types';
 import { SyncService } from '../services/syncService';
@@ -17,118 +18,35 @@ const PasswordModal: React.FC<PasswordModalProps> = ({ user, onClose, onSuccess 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    if (user.password && currentPassword !== user.password) return setError('Senha atual incorreta.');
+    if (newPassword.length < 4) return setError('Mínimo 4 caracteres.');
+    if (newPassword !== confirmPassword) return setError('Confirmação não confere.');
+
     setIsSaving(true);
-
-    if (user.password && currentPassword !== user.password) {
-      setError('Senha atual incorreta.');
-      setIsSaving(false);
-      return;
-    }
-
-    if (newPassword.length < 4) {
-      setError('A nova senha deve ter pelo menos 4 caracteres.');
-      setIsSaving(false);
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('A confirmação de senha não confere.');
-      setIsSaving(false);
-      return;
-    }
-
     try {
-      const usersResponse = await SyncService.getUsers();
-      
-      if (!usersResponse) {
-        setError('Não foi possível carregar os dados da nuvem para atualizar a senha.');
-        setIsSaving(false);
-        return;
-      }
-
-      // v37: Garante que estamos manipulando uma cópia da lista
-      const users = [...usersResponse];
+      const users = await SyncService.getUsers() || [];
       const userIndex = users.findIndex(u => u.username === user.username);
-      
       if (userIndex !== -1) {
-        const updatedUser = { ...users[userIndex], password: newPassword };
-        users[userIndex] = updatedUser;
-        const success = await SyncService.saveUsers(users);
-        
-        if (success) {
-          onSuccess(updatedUser);
-          alert('Senha alterada com sucesso em todos os seus dispositivos!');
-          onClose();
-        } else {
-          setError('Erro de conexão ao salvar nova senha na nuvem.');
-        }
-      } else {
-        setError('Usuário não encontrado no banco de dados remoto.');
+        users[userIndex].password = newPassword;
+        await SyncService.saveUsers(users);
+        onSuccess(users[userIndex]);
+        alert('Senha atualizada em todos os dispositivos!');
+        onClose();
       }
-    } catch (err) {
-      setError('Erro crítico ao sincronizar com a nuvem.');
-    } finally {
-      setIsSaving(false);
-    }
+    } catch (err) { setError('Erro de sincronização.'); } finally { setIsSaving(false); }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-slate-200">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-bold text-slate-800">Alterar Minha Senha</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" disabled={isSaving}>
-            <i className="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl">
+        <h3 className="text-sm font-black text-slate-800 uppercase mb-6">Segurança da Conta</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs font-bold border border-red-100">{error}</div>}
-          
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Senha Atual</label>
-            <input 
-              type="password" 
-              required 
-              disabled={isSaving}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nova Senha</label>
-            <input 
-              type="password" 
-              required 
-              disabled={isSaving}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Confirmar Nova Senha</label>
-            <input 
-              type="password" 
-              required 
-              disabled={isSaving}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={isSaving}
-            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-all disabled:bg-slate-400"
-          >
-            {isSaving ? 'Salvando na Nuvem...' : 'Salvar Nova Senha'}
-          </button>
+          {error && <p className="text-red-500 text-[10px] font-bold text-center">{error}</p>}
+          <input type="password" required placeholder="Senha Atual" className="w-full p-4 bg-slate-50 rounded-2xl text-xs outline-none" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
+          <input type="password" required placeholder="Nova Senha" className="w-full p-4 bg-slate-50 rounded-2xl text-xs outline-none" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+          <input type="password" required placeholder="Confirmar Nova Senha" className="w-full p-4 bg-slate-50 rounded-2xl text-xs outline-none" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+          <button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl text-[10px] uppercase">{isSaving ? 'Salvando...' : 'Atualizar Senha'}</button>
+          <button type="button" onClick={onClose} className="w-full text-slate-400 text-[9px] font-bold uppercase mt-2">Cancelar</button>
         </form>
       </div>
     </div>

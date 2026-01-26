@@ -6,7 +6,7 @@ export enum Location {
 
 export type UserRole = 'COORDINATOR' | 'SUPERVISOR' | 'EMPLOYEE';
 
-export type OvertimeStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type OvertimeStatus = 'REGISTERED'; // Obsoleto approval
 
 export interface User {
   username: string;
@@ -26,11 +26,12 @@ export interface OvertimeRecord {
   location: Location;
   startTime: string;
   endTime: string;
-  reason: string;
+  reason: 'Trabalho emergencial' | 'Atraso na execução diária';
+  observations?: string;
   durationMinutes: number;
   createdAt: number;
   ownerUsername: string;
-  status: OvertimeStatus; // Novo campo
+  status: OvertimeStatus;
 }
 
 export interface HierarchyData {
