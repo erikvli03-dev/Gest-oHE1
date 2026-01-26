@@ -1,4 +1,3 @@
-
 import { OvertimeRecord, User } from '../types';
 
 const BUCKET_NAME = 'ailton_v37_prod'; 
@@ -46,19 +45,16 @@ export const SyncService = {
       }
     }
 
-    if (!cachedSheetUrl) {
-      console.error("URL da Planilha não configurada.");
-      return false;
-    }
+    if (!cachedSheetUrl) return false;
 
     try {
       const formData = new URLSearchParams();
-      // Mapeamento completo e robusto
-      formData.append('action', action);
+      // Garantindo strings limpas e nomes idênticos ao Script
+      formData.append('action', String(action));
       formData.append('id', String(record.id || ""));
-      formData.append('coordenador', String(record.coordinator || ""));
-      formData.append('colaborador', String(record.employee || ""));
-      formData.append('supervisor', String(record.supervisor || ""));
+      formData.append('coordenador', String(record.coordinator || "Ailton Souza"));
+      formData.append('colaborador', String(record.employee || "Não Identificado"));
+      formData.append('supervisor', String(record.supervisor || "Não Identificado"));
       formData.append('local', String(record.location || ""));
       formData.append('startDate', String(record.startDate || ""));
       formData.append('startTime', String(record.startTime || ""));
@@ -72,6 +68,9 @@ export const SyncService = {
       formData.append('duracao_fmt', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
 
+      // Console log para você debugar se necessário (F12 no navegador)
+      console.log("Enviando para planilha:", Object.fromEntries(formData));
+
       await fetch(cachedSheetUrl!, {
         method: 'POST',
         mode: 'no-cors',
@@ -80,7 +79,7 @@ export const SyncService = {
       });
       return true;
     } catch (e) { 
-      console.error("Erro ao enviar para Google Sheets:", e);
+      console.error("Erro fatal no push:", e);
       return false; 
     }
   },
