@@ -18,8 +18,8 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const CACHE_KEY = 'users_v30_local';
+  const APP_VERSION = "v43.0.1-stable"; // v43: Versão para controle de atualização
 
-  // v40: Trava o nome se for Coordenador
   useEffect(() => {
     if (isRegistering && role === 'COORDINATOR') {
       setName(COORDINATOR_NAME);
@@ -43,7 +43,6 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     const cleanPass = password.trim();
     const localUsers = getLocalUsers();
 
-    // Se estiver tentando registrar mas os dados baterem com um usuário local, loga direto
     const localMatch = localUsers.find(u => u.username === cleanUser && u.password === cleanPass);
     if (localMatch) {
       onLogin(localMatch);
@@ -101,6 +100,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             <i className="fa-solid fa-lock"></i>
           </div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Gestão de HE FIPS</h2>
+          <span className="text-[9px] font-mono text-slate-300 mt-1 uppercase tracking-widest">{APP_VERSION}</span>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">

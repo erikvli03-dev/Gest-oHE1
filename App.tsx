@@ -146,23 +146,23 @@ const App: React.FC = () => {
     
     const today = new Date().toISOString().split('T')[0];
     
-    // v42: Envia dados completos para evitar o erro de "undefined" na planilha
-    const success = await SyncService.pushToGoogleSheet({ 
+    // v43: Registro de teste ultra-completo
+    await SyncService.pushToGoogleSheet({ 
       employee: "TESTE DE SISTEMA", 
-      supervisor: user?.name || "Ailton Souza",
+      supervisor: user?.name || "N/A",
       coordinator: "Ailton Souza",
-      reason: "Teste de conexão FIPS OK",
+      reason: "Teste v43 Conexão OK",
       location: "SANTOS",
       startDate: today,
-      startTime: "08:00",
+      startTime: "12:00",
       endDate: today,
-      endTime: "09:00",
+      endTime: "13:00",
       durationMinutes: 60,
       status: "PENDING",
       createdAt: Date.now() 
     });
 
-    alert("Comando enviado! Se a URL estiver certa, uma linha sem erros aparecerá na sua planilha agora.");
+    alert("Comando enviado (Versão v43). Se a URL estiver certa, uma linha completa aparecerá na planilha.");
     setIsTestingSheet(false);
   };
 
