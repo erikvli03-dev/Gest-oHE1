@@ -1,4 +1,3 @@
-
 import { OvertimeRecord, User } from '../types';
 
 const BUCKET_NAME = 'ailton_v37_prod'; 
@@ -6,6 +5,7 @@ const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
 let isCloudBlocked = false;
 let lastRetryTime = 0;
+let cachedSheetUrl: string | null = localStorage.getItem('google_sheet_url');
 
 function checkCloudStatus(): boolean {
   if (!isCloudBlocked) return true;
@@ -37,25 +37,32 @@ export const SyncService = {
   isCloudReady: () => !isCloudBlocked,
   
   async pushToGoogleSheet(record: OvertimeRecord, action: 'INSERT' | 'UPDATE' | 'DELETE' = 'INSERT'): Promise<boolean> {
-    const sheetUrl = localStorage.getItem('google_sheet_url');
-    if (!sheetUrl) return false;
+    // Se não houver URL em cache, tenta buscar na nuvem antes de falhar
+    if (!cachedSheetUrl) {
+      const config = await this.getConfig();
+      if (config?.googleSheetUrl) {
+        cachedSheetUrl = config.googleSheetUrl;
+        localStorage.setItem('google_sheet_url', cachedSheetUrl!);
+      }
+    }
+
+    if (!cachedSheetUrl) {
+      console.error("URL da Planilha não configurada.");
+      return false;
+    }
 
     try {
       const formData = new URLSearchParams();
-      // Mapeamento explícito para o Script do Google
       formData.append('action', action);
       formData.append('id', record.id);
-      formData.append('colaborador', record.employee || "");
-      formData.append('supervisor', record.supervisor || "");
-      formData.append('local', record.location || "");
-      
-      // Use os nomes originais do objeto record para evitar confusão no script
-      formData.append('startDate', record.startDate || "");
-      formData.append('startTime', record.startTime || "");
-      formData.append('endDate', record.endDate || "");
-      formData.append('endTime', record.endTime || "");
-      
-      formData.append('motivo', record.reason || "");
+      formData.append('colaborador', record.employee);
+      formData.append('supervisor', record.supervisor);
+      formData.append('local', record.location);
+      formData.append('startDate', record.startDate);
+      formData.append('startTime', record.startTime);
+      formData.append('endDate', record.endDate);
+      formData.append('endTime', record.endTime);
+      formData.append('motivo', record.reason);
       formData.append('obs', record.observations || "");
       
       const h = Math.floor(record.durationMinutes / 60);
@@ -63,26 +70,35 @@ export const SyncService = {
       formData.append('duracao_formatada', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
 
-      // Log para debug no console do navegador
-      console.log("Enviando para Planilha:", Object.fromEntries(formData));
-
-      await fetch(sheetUrl, {
+      await fetch(cachedSheetUrl!, {
         method: 'POST',
         mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
       });
       return true;
     } catch (e) { 
-      console.error("Erro no fetch da planilha:", e);
       return false; 
     }
   },
 
-  async saveConfig(config: any): Promise<boolean> { return !!(await apiCall('config', 'PUT', config)); },
-  async getConfig(): Promise<any> { return await apiCall('config', 'GET'); },
+  async saveConfig(config: any): Promise<boolean> { 
+    if (config.googleSheetUrl) {
+      cachedSheetUrl = config.googleSheetUrl;
+      localStorage.setItem('google_sheet_url', config.googleSheetUrl);
+    }
+    return !!(await apiCall('config', 'PUT', config)); 
+  },
+  
+  async getConfig(): Promise<any> { 
+    const config = await apiCall('config', 'GET');
+    if (config?.googleSheetUrl) {
+      cachedSheetUrl = config.googleSheetUrl;
+      localStorage.setItem('google_sheet_url', config.googleSheetUrl);
+    }
+    return config;
+  },
+
   async saveRecords(records: OvertimeRecord[]): Promise<boolean> { return !!(await apiCall('recs', 'PUT', records)); },
   async getRecords(): Promise<OvertimeRecord[] | null> { return await apiCall('recs', 'GET'); },
   async saveUsers(users: User[]): Promise<boolean> { return !!(await apiCall('users', 'PUT', users)); },

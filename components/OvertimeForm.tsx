@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { OvertimeRecord, Location, User } from '../types';
 import { COORDINATOR_NAME, SUPERVISORS, EMPLOYEE_HIERARCHY } from '../constants';
@@ -13,7 +12,7 @@ interface OvertimeFormProps {
 const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCancel, currentUser }) => {
   const [formData, setFormData] = useState({
     coordinator: COORDINATOR_NAME,
-    supervisor: currentUser.role === 'SUPERVISOR' ? currentUser.name : currentUser.supervisorName || '',
+    supervisor: currentUser.role === 'SUPERVISOR' ? currentUser.name : (currentUser.supervisorName || ''),
     employee: currentUser.role === 'EMPLOYEE' ? currentUser.name : '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
@@ -23,6 +22,19 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
     reason: 'Trabalho emergencial' as 'Trabalho emergencial' | 'Atraso na execução diária',
     observations: '',
   });
+
+  const [availableEmployees, setAvailableEmployees] = useState<string[]>([]);
+
+  // Atualiza os colaboradores baseados no supervisor selecionado
+  useEffect(() => {
+    if (formData.supervisor && EMPLOYEE_HIERARCHY[formData.supervisor]) {
+      const employees = EMPLOYEE_HIERARCHY[formData.supervisor] || [];
+      // Inclui o próprio supervisor na lista caso ele mesmo faça HE
+      setAvailableEmployees([formData.supervisor, ...employees]);
+    } else {
+      setAvailableEmployees([]);
+    }
+  }, [formData.supervisor]);
 
   useEffect(() => {
     if (initialData) {
@@ -41,15 +53,6 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
     }
   }, [initialData]);
 
-  const [availableEmployees, setAvailableEmployees] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (formData.supervisor) {
-      const employees = EMPLOYEE_HIERARCHY[formData.supervisor] || [];
-      setAvailableEmployees([formData.supervisor, ...employees]);
-    }
-  }, [formData.supervisor]);
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -57,11 +60,16 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.employee) return alert('Selecione um colaborador.');
+    
     const start = new Date(`${formData.startDate}T${formData.startTime}`);
     const end = new Date(`${formData.endDate}T${formData.endTime}`);
-    if (end <= start) return alert('Data/hora inválida.');
+    if (end <= start) return alert('A hora de fim deve ser posterior à de início.');
+    
     onSubmit(formData);
+    
     if (!initialData) {
+      // Limpa apenas os campos de tempo e obs para facilitar novos lançamentos do mesmo grupo
       setFormData(prev => ({ ...prev, startTime: '', endTime: '', observations: '' }));
     }
   };
@@ -74,17 +82,51 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Supervisor: Selecionável apenas pelo Coordenador */}
         <div>
-          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Colaborador</label>
-          <select name="employee" required disabled={currentUser.role === 'EMPLOYEE'} value={formData.employee} onChange={handleChange} className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none">
-            <option value="">Selecione...</option>
+          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Supervisor Responsável</label>
+          <select 
+            name="supervisor" 
+            required 
+            disabled={currentUser.role !== 'COORDINATOR'} 
+            value={formData.supervisor} 
+            onChange={handleChange} 
+            className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none disabled:opacity-70"
+          >
+            <option value="">Selecione o Supervisor...</option>
+            {SUPERVISORS.map(sup => <option key={sup} value={sup}>{sup}</option>)}
+          </select>
+        </div>
+
+        {/* Colaborador: Depende do Supervisor */}
+        <div>
+          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Nome do Colaborador</label>
+          <select 
+            name="employee" 
+            required 
+            disabled={currentUser.role === 'EMPLOYEE' || !formData.supervisor} 
+            value={formData.employee} 
+            onChange={handleChange} 
+            className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none disabled:opacity-50"
+          >
+            <option value="">{formData.supervisor ? 'Selecione o nome...' : 'Escolha o Supervisor primeiro'}</option>
             {availableEmployees.map(emp => <option key={emp} value={emp}>{emp}</option>)}
           </select>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Local</label>
           <select name="location" required value={formData.location} onChange={handleChange} className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none">
             {Object.values(Location).map(loc => <option key={loc} value={loc}>{loc}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Motivo Principal</label>
+          <select name="reason" required value={formData.reason} onChange={handleChange} className="w-full border border-slate-100 bg-blue-50 text-blue-800 rounded-xl p-3 text-xs font-black outline-none">
+            <option value="Trabalho emergencial">Trabalho emergencial</option>
+            <option value="Atraso na execução diária">Atraso na execução diária</option>
           </select>
         </div>
       </div>
@@ -103,16 +145,8 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
       </div>
 
       <div>
-        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Motivo Principal</label>
-        <select name="reason" required value={formData.reason} onChange={handleChange} className="w-full border border-slate-100 bg-blue-50 text-blue-800 rounded-xl p-3 text-xs font-black outline-none">
-          <option value="Trabalho emergencial">Trabalho emergencial</option>
-          <option value="Atraso na execução diária">Atraso na execução diária</option>
-        </select>
-      </div>
-
-      <div>
         <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Observações (Opcional)</label>
-        <textarea name="observations" rows={2} value={formData.observations} onChange={handleChange} className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs outline-none resize-none" placeholder="Detalhes adicionais..."></textarea>
+        <textarea name="observations" rows={2} value={formData.observations} onChange={handleChange} className="w-full border border-slate-100 bg-slate-50 rounded-xl p-3 text-xs outline-none resize-none" placeholder="Explique brevemente o motivo da HE..."></textarea>
       </div>
 
       <div className="flex gap-2">
@@ -120,7 +154,7 @@ const OvertimeForm: React.FC<OvertimeFormProps> = ({ onSubmit, initialData, onCa
           {initialData ? 'Salvar Alterações' : 'Confirmar Lançamento'}
         </button>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="px-6 bg-slate-100 text-slate-500 font-black rounded-xl text-[10px] uppercase">Sair</button>
+          <button type="button" onClick={onCancel} className="px-6 bg-slate-100 text-slate-500 font-black rounded-xl text-[10px] uppercase">Cancelar</button>
         )}
       </div>
     </form>
