@@ -37,6 +37,14 @@ const App: React.FC = () => {
     if (!silent) setIsSyncing(true);
     
     try {
+      // 1. Sincroniza Configurações (URL da Planilha)
+      const cloudConfig = await SyncService.getConfig();
+      if (cloudConfig && cloudConfig.googleSheetUrl) {
+        setGoogleSheetUrl(cloudConfig.googleSheetUrl);
+        localStorage.setItem('google_sheet_url', cloudConfig.googleSheetUrl);
+      }
+
+      // 2. Sincroniza Registros
       const cloudRecords = await SyncService.getRecords();
       if (cloudRecords !== null) {
         setRecords(prev => {
@@ -135,23 +143,21 @@ const App: React.FC = () => {
     }
   };
 
-  const saveGoogleConfig = () => {
+  const saveGoogleConfig = async () => {
     localStorage.setItem('google_sheet_url', googleSheetUrl);
-    alert("Configuração de Planilha Salva!");
+    await SyncService.saveConfig({ googleSheetUrl });
+    alert("Configuração salva na nuvem para toda a coordenação!");
   };
 
   const handleTestSheet = async () => {
     if (!googleSheetUrl) return alert("Insira uma URL primeiro.");
     setIsTestingSheet(true);
-    
     const today = new Date().toISOString().split('T')[0];
-    
-    // v43: Registro de teste ultra-completo
     await SyncService.pushToGoogleSheet({ 
-      employee: "TESTE DE SISTEMA", 
+      employee: "TESTE V44 CLOUD", 
       supervisor: user?.name || "N/A",
       coordinator: "Ailton Souza",
-      reason: "Teste v43 Conexão OK",
+      reason: "Sincronização Cloud OK",
       location: "SANTOS",
       startDate: today,
       startTime: "12:00",
@@ -161,8 +167,7 @@ const App: React.FC = () => {
       status: "PENDING",
       createdAt: Date.now() 
     });
-
-    alert("Comando enviado (Versão v43). Se a URL estiver certa, uma linha completa aparecerá na planilha.");
+    alert("Teste enviado! Verifique sua planilha.");
     setIsTestingSheet(false);
   };
 
