@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
 import { COORDINATOR_NAME, SUPERVISORS, EMPLOYEE_HIERARCHY } from '../constants';
@@ -97,7 +96,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
           <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-3xl mb-4 shadow-xl">
             <i className="fa-solid fa-mobile-screen-button"></i>
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Gestão HE v30</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Gestão de HE FIPS</h2>
           <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-200">
             <div className={`w-2 h-2 rounded-full ${SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
             <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">
