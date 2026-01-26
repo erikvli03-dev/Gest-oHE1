@@ -194,7 +194,7 @@ const App: React.FC = () => {
             </div>
             
             <div className="space-y-6">
-              {user.role === 'COORDINATOR' && (
+              {(user.role === 'COORDINATOR' || user.role === 'SUPERVISOR') && (
                 <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
                   <label className="block text-[10px] font-black text-blue-600 uppercase mb-2">URL da Planilha Google (Apps Script)</label>
                   <input 

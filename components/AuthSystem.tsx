@@ -36,7 +36,6 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     const cleanPass = password.trim();
     const localUsers = getLocalUsers();
 
-    // v30: Tenta local primeiro de forma agressiva
     const localMatch = localUsers.find(u => u.username === cleanUser && u.password === cleanPass);
 
     if (!isRegistering && localMatch) {
@@ -45,7 +44,6 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
       return;
     }
 
-    // Se não está no local ou é cadastro, tenta rede sem bloquear
     try {
       let allUsers = localUsers;
       
@@ -113,24 +111,34 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
 
           {isRegistering && (
             <div className="space-y-3 pt-3 border-t">
-              <select required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" value={name} onChange={e => setName(e.target.value)}>
-                <option value="">Selecione seu nome...</option>
-                {role === 'SUPERVISOR' 
-                  ? SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)
-                  : (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Escolha o Supervisor primeiro</option>)
-                }
-              </select>
-              <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" value={role} onChange={e => setRole(e.target.value as UserRole)}>
+              <select 
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" 
+                value={role} 
+                onChange={e => {
+                  const newRole = e.target.value as UserRole;
+                  setRole(newRole);
+                  setName('');
+                  setSelectedSup('');
+                }}
+              >
                 <option value="EMPLOYEE">Colaborador</option>
                 <option value="SUPERVISOR">Supervisor</option>
                 <option value="COORDINATOR">Coordenador</option>
               </select>
+
               {role === 'EMPLOYEE' && (
                 <select required className="w-full p-4 bg-blue-50 border border-blue-200 rounded-2xl font-bold text-blue-800" value={selectedSup} onChange={e => setSelectedSup(e.target.value)}>
-                  <option value="">Supervisor?</option>
+                  <option value="">Quem é seu Supervisor?</option>
                   {SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               )}
+
+              <select required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" value={name} onChange={e => setName(e.target.value)}>
+                <option value="">Selecione seu nome...</option>
+                {role === 'COORDINATOR' && <option value={COORDINATOR_NAME}>{COORDINATOR_NAME}</option>}
+                {role === 'SUPERVISOR' && SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
+                {role === 'EMPLOYEE' && (selectedSup ? EMPLOYEE_HIERARCHY[selectedSup].map(e => <option key={e} value={e}>{e}</option>) : <option disabled>Escolha o Supervisor primeiro</option>)}
+              </select>
             </div>
           )}
 
@@ -139,7 +147,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             {isRegistering ? 'Cadastrar' : 'Acessar'}
           </button>
           
-          <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-2">
+          <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); setName(''); setUsername(''); setPassword(''); }} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-2">
             {isRegistering ? 'Voltar para Login' : 'Não tem conta? Clique aqui'}
           </button>
           
