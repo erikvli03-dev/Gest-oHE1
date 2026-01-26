@@ -1,3 +1,4 @@
+
 import { OvertimeRecord, User } from '../types';
 
 const BUCKET_NAME = 'ailton_v37_prod'; 
@@ -37,7 +38,6 @@ export const SyncService = {
   isCloudReady: () => !isCloudBlocked,
   
   async pushToGoogleSheet(record: OvertimeRecord, action: 'INSERT' | 'UPDATE' | 'DELETE' = 'INSERT'): Promise<boolean> {
-    // Se não houver URL em cache, tenta buscar na nuvem antes de falhar
     if (!cachedSheetUrl) {
       const config = await this.getConfig();
       if (config?.googleSheetUrl) {
@@ -53,21 +53,23 @@ export const SyncService = {
 
     try {
       const formData = new URLSearchParams();
+      // Mapeamento completo e robusto
       formData.append('action', action);
-      formData.append('id', record.id);
-      formData.append('colaborador', record.employee);
-      formData.append('supervisor', record.supervisor);
-      formData.append('local', record.location);
-      formData.append('startDate', record.startDate);
-      formData.append('startTime', record.startTime);
-      formData.append('endDate', record.endDate);
-      formData.append('endTime', record.endTime);
-      formData.append('motivo', record.reason);
-      formData.append('obs', record.observations || "");
+      formData.append('id', String(record.id || ""));
+      formData.append('coordenador', String(record.coordinator || ""));
+      formData.append('colaborador', String(record.employee || ""));
+      formData.append('supervisor', String(record.supervisor || ""));
+      formData.append('local', String(record.location || ""));
+      formData.append('startDate', String(record.startDate || ""));
+      formData.append('startTime', String(record.startTime || ""));
+      formData.append('endDate', String(record.endDate || ""));
+      formData.append('endTime', String(record.endTime || ""));
+      formData.append('motivo', String(record.reason || ""));
+      formData.append('obs', String(record.observations || ""));
       
       const h = Math.floor(record.durationMinutes / 60);
       const m = record.durationMinutes % 60;
-      formData.append('duracao_formatada', `${h}:${m.toString().padStart(2, '0')}`);
+      formData.append('duracao_fmt', `${h}:${m.toString().padStart(2, '0')}`);
       formData.append('timestamp', new Date().toLocaleString('pt-BR'));
 
       await fetch(cachedSheetUrl!, {
@@ -78,6 +80,7 @@ export const SyncService = {
       });
       return true;
     } catch (e) { 
+      console.error("Erro ao enviar para Google Sheets:", e);
       return false; 
     }
   },

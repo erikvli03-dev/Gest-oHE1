@@ -19,7 +19,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const CACHE_KEY = 'users_v30_local';
-  const APP_VERSION = "v46.0.0-final"; 
+  const APP_VERSION = "v46.0.1"; 
 
   useEffect(() => {
     if (isRegistering && role === 'COORDINATOR') {
