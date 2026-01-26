@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { OvertimeRecord, User, OvertimeStatus } from './types';
 import OvertimeForm from './components/OvertimeForm';
 import OvertimeList from './components/OvertimeList';
@@ -9,7 +9,7 @@ import { calculateDuration } from './utils/timeUtils';
 import { SyncService } from './services/syncService';
 
 const App: React.FC = () => {
-  const CACHE_RECS = 'overtime_v32_recs';
+  const CACHE_RECS = 'overtime_v35_recs';
   
   const [records, setRecords] = useState<OvertimeRecord[]>([]);
   const [user, setUser] = useState<User | null>(() => {
@@ -21,49 +21,56 @@ const App: React.FC = () => {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncInput, setSyncInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      const cached = localStorage.getItem(CACHE_RECS);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) setRecords(parsed);
-        } catch (e) { setRecords([]); }
-      }
-      if (SyncService.isCloudReady()) forceSync();
-    }
-  }, [user?.username]);
+  // v35: Função de mesclagem robusta
+  const mergeRecords = useCallback((cloudData: OvertimeRecord[], localData: OvertimeRecord[]) => {
+    const map = new Map();
+    // Prioridade para o que está na nuvem, mas mantém IDs locais novos
+    localData.forEach(r => map.set(r.id, r));
+    cloudData.forEach(r => map.set(r.id, r));
+    return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }, []);
 
-  const forceSync = async () => {
-    if (!user) return;
+  const forceSync = useCallback(async (silent = false) => {
+    if (!user || isSyncing) return;
+    if (!silent) setIsSyncing(true);
+    
     try {
       const cloudRecords = await SyncService.getRecords();
       if (cloudRecords && Array.isArray(cloudRecords)) {
-        handleDataImport({ records: cloudRecords }, true);
+        setRecords(prev => {
+          const merged = mergeRecords(cloudRecords, prev);
+          localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
+          return merged;
+        });
       }
-      setLastSync(new Date().toLocaleTimeString());
+      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
-      console.warn("Modo offline ativo.");
+      console.warn("Falha na sincronização.");
+    } finally {
+      setIsSyncing(false);
     }
-  };
+  }, [user, isSyncing, mergeRecords]);
 
-  const handleDataImport = (data: any, isCloud = false) => {
-    if (!data || !data.records) return;
-    setRecords(prev => {
-      const map = new Map();
-      const currentRecords = Array.isArray(prev) ? prev : [];
-      currentRecords.forEach(r => map.set(r.id, r));
-      data.records.forEach((r: OvertimeRecord) => map.set(r.id, r));
-      const final = Array.from(map.values()).sort((a,b) => b.createdAt - a.createdAt);
-      localStorage.setItem(CACHE_RECS, JSON.stringify(final));
-      return final;
-    });
-    if (!isCloud) {
-      alert(`Dados Importados!`);
-      setShowSyncModal(false);
+  // v35: Loop de atualização automática (Background Sync)
+  useEffect(() => {
+    if (user) {
+      // Carrega cache inicial
+      const cached = localStorage.getItem(CACHE_RECS);
+      if (cached) {
+        try { setRecords(JSON.parse(cached)); } catch { setRecords([]); }
+      }
+      
+      forceSync(); // Sync inicial
+
+      const interval = setInterval(() => {
+        forceSync(true); // Sync silencioso a cada 30s
+      }, 30000);
+
+      return () => clearInterval(interval);
     }
-  };
+  }, [user?.username]);
 
   const handleAddRecord = async (data: any) => {
     setIsSaving(true);
@@ -78,37 +85,65 @@ const App: React.FC = () => {
       status: 'PENDING'
     };
 
-    // Atualiza imediatamente na UI
-    const updated = [newRecord, ...records];
-    setRecords(updated);
-    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-
-    // Feedback de sucesso imediato
-    setTimeout(() => {
-      setIsSaving(false);
-      // Notificação nativa se possível
+    try {
+      // v35: Ciclo Read-Modify-Write para garantir que não apague dados de outros
+      const latestCloud = await SyncService.getRecords();
+      const updatedList = mergeRecords(latestCloud, [newRecord, ...records]);
+      
+      setRecords(updatedList);
+      localStorage.setItem(CACHE_RECS, JSON.stringify(updatedList));
+      await SyncService.saveRecords(updatedList);
+      
       if ('vibrate' in navigator) navigator.vibrate(50);
-    }, 800);
-
-    // Sincroniza em background
-    SyncService.saveRecords(updated).catch(err => {
-      console.error("Erro ao sincronizar na nuvem, salvo localmente.");
-    });
+    } catch (err) {
+      alert("Erro ao salvar na nuvem. O registro ficou salvo apenas neste aparelho.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleUpdateStatus = async (id: string, s: OvertimeStatus) => {
-    const updated = records.map(r => r.id === id ? {...r, status: s} : r);
-    setRecords(updated);
-    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-    SyncService.saveRecords(updated).catch(() => {});
+    setIsSyncing(true);
+    try {
+      const latestCloud = await SyncService.getRecords();
+      const updated = mergeRecords(latestCloud, records).map(r => 
+        r.id === id ? {...r, status: s} : r
+      );
+      setRecords(updated);
+      localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
+      await SyncService.saveRecords(updated);
+    } catch (e) {
+      alert("Erro ao atualizar status na nuvem.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!confirm('Excluir este lançamento?')) return;
-    const updated = records.filter(r => r.id !== id);
-    setRecords(updated);
-    localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
-    SyncService.saveRecords(updated).catch(() => {});
+    if (!confirm('Excluir este lançamento permanentemente?')) return;
+    setIsSyncing(true);
+    try {
+      const latestCloud = await SyncService.getRecords();
+      const updated = latestCloud.filter((r: any) => r.id !== id);
+      setRecords(updated);
+      localStorage.setItem(CACHE_RECS, JSON.stringify(updated));
+      await SyncService.saveRecords(updated);
+    } catch (e) {
+      alert("Erro ao deletar na nuvem.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDataImport = (data: any) => {
+    if (!data || !data.records) return;
+    const merged = mergeRecords(data.records, records);
+    setRecords(merged);
+    localStorage.setItem(CACHE_RECS, JSON.stringify(merged));
+    SyncService.saveRecords(merged).then(() => {
+      alert(`Dados Importados e Sincronizados!`);
+      setShowSyncModal(false);
+    });
   };
 
   if (!user) return <AuthSystem onLogin={u => { setUser(u); sessionStorage.setItem('logged_user', JSON.stringify(u)); }} />;
@@ -121,14 +156,17 @@ const App: React.FC = () => {
           <div>
             <p className="text-[11px] font-black uppercase tracking-tighter leading-none">{user.name}</p>
             <div className="flex items-center gap-1.5 mt-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+              <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-400 animate-pulse' : (SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500')}`}></div>
               <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">
-                v32 • {SyncService.isCloudReady() ? 'Sincronizado' : 'Offline'}
+                {isSyncing ? 'Sincronizando...' : (lastSync ? `Atualizado ${lastSync}` : 'Conectado')}
               </p>
             </div>
           </div>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => forceSync()} disabled={isSyncing} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center border border-white/5 active:scale-90 transition-all disabled:opacity-50">
+            <i className={`fa-solid fa-arrows-rotate text-xs ${isSyncing ? 'animate-spin' : ''}`}></i>
+          </button>
           <button onClick={() => setShowSyncModal(true)} className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center border border-white/5 active:scale-90 transition-all">
             <i className="fa-solid fa-cloud-arrow-up text-xs"></i>
           </button>
@@ -141,7 +179,7 @@ const App: React.FC = () => {
       {isSaving && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest z-[150] shadow-2xl flex items-center gap-3 border border-white/10 animate-in fade-in zoom-in duration-300">
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
-          Lançamento Realizado!
+          Gravando na Nuvem...
         </div>
       )}
 
@@ -153,7 +191,7 @@ const App: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center gap-2 px-2">
             <div className="h-px flex-1 bg-slate-200"></div>
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Histórico Recente</span>
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Registros de HE</span>
             <div className="h-px flex-1 bg-slate-200"></div>
           </div>
           <OvertimeList records={records} onDelete={handleDeleteRecord} onUpdateStatus={handleUpdateStatus} currentUser={user} onEdit={()=>{}} />
@@ -166,15 +204,15 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-8">
               <div className="flex flex-col">
                 <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Sincronização Manual</h3>
-                <span className="text-[9px] text-slate-400 font-bold uppercase mt-1">v32 • Backup e Importação</span>
+                <span className="text-[9px] text-slate-400 font-bold uppercase mt-1">Backup e Importação</span>
               </div>
               <button onClick={() => setShowSyncModal(false)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400"><i className="fa-solid fa-xmark"></i></button>
             </div>
             
             <div className="space-y-4">
               <button onClick={() => {
-                const data = JSON.stringify({ records, v: '32', sender: user.name });
-                const msg = `📊 *BACKUP HE v32*\n\nColaborador: ${user.name}\n\n*DATA:* ${new Date().toLocaleString()}\n\n*CÓDIGO:* \n${data}`;
+                const data = JSON.stringify({ records, v: '35', sender: user.name });
+                const msg = `📊 *BACKUP HE v35*\n\nColaborador: ${user.name}\n\n*DATA:* ${new Date().toLocaleString()}\n\n*CÓDIGO:* \n${data}`;
                 window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
               }} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 active:scale-95 transition-all">
                 <i className="fa-brands fa-whatsapp text-xl"></i> Exportar via WhatsApp
@@ -187,11 +225,7 @@ const App: React.FC = () => {
               </div>
 
               <textarea value={syncInput} onChange={e => setSyncInput(e.target.value)} placeholder="Cole aqui o código de backup..." className="w-full h-32 bg-slate-50 border border-slate-200 p-4 text-[9px] font-mono rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none" />
-              <button onClick={() => { try { handleDataImport(JSON.parse(syncInput)); } catch { alert('Código inválido ou incompleto!'); } }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Importar Registros</button>
-              
-              <button onClick={forceSync} className="w-full text-blue-600 font-black text-[10px] uppercase tracking-widest py-2">
-                <i className="fa-solid fa-rotate mr-2"></i> Forçar Sinc. com Nuvem
-              </button>
+              <button onClick={() => { try { handleDataImport(JSON.parse(syncInput)); } catch { alert('Código inválido!'); } }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Importar Registros</button>
             </div>
           </div>
         </div>
