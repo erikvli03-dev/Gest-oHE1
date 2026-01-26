@@ -1,6 +1,6 @@
 import { OvertimeRecord, User } from '../types';
 
-// v38: Bucket para persistência interna
+// v41: Bucket para persistência interna
 const BUCKET_NAME = 'ailton_v37_prod'; 
 const BASE_URL = `https://kvdb.io/6L5qE8vE2uA7pYn9/${BUCKET_NAME}`;
 
@@ -55,19 +55,36 @@ async function apiCall(key: string, method: 'GET' | 'PUT' = 'GET', data?: any): 
 export const SyncService = {
   isCloudReady: () => !isCloudBlocked,
   
-  // v38: Envia para a Planilha Google (Modo Forms)
-  async pushToGoogleSheet(record: OvertimeRecord): Promise<boolean> {
+  // v41: Envia para a Planilha Google como Form Data (URLSearchParams)
+  // Este formato é o mais compatível com Google Apps Script doPost(e) { e.parameter }
+  async pushToGoogleSheet(record: any): Promise<boolean> {
     const sheetUrl = localStorage.getItem('google_sheet_url');
     if (!sheetUrl) return false;
 
     try {
-      const response = await fetch(sheetUrl, {
-        method: 'POST',
-        mode: 'no-cors', // Necessário para Google Apps Script sem preflight
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record)
+      const formData = new URLSearchParams();
+      
+      // Mapeia todos os campos para o formato de formulário
+      Object.keys(record).forEach(key => {
+        formData.append(key, String(record[key]));
       });
-      return true; // no-cors sempre retorna opaque, assumimos sucesso se não der erro
+      
+      // Adiciona campos formatados extras
+      formData.append('data_hora_envio', new Date().toLocaleString('pt-BR'));
+      if (record.durationMinutes) {
+        const h = Math.floor(record.durationMinutes / 60);
+        const m = record.durationMinutes % 60;
+        formData.append('duracao_formatada', `${h}:${m.toString().padStart(2, '0')}`);
+      }
+
+      await fetch(sheetUrl, {
+        method: 'POST',
+        mode: 'no-cors', // Crucial para evitar erro de CORS no navegador
+        cache: 'no-cache',
+        body: formData
+      });
+      
+      return true;
     } catch (e) {
       console.error("Erro ao enviar para planilha:", e);
       return false;

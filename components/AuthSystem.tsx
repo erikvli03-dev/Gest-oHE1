@@ -19,14 +19,10 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
   
   const CACHE_KEY = 'users_v30_local';
 
-  // v39: Preenchimento automático do nome baseado no cargo
+  // v40: Trava o nome se for Coordenador
   useEffect(() => {
-    if (isRegistering) {
-      if (role === 'COORDINATOR') {
-        setName(COORDINATOR_NAME);
-      } else if (role === 'SUPERVISOR' && !name) {
-        setName('');
-      }
+    if (isRegistering && role === 'COORDINATOR') {
+      setName(COORDINATOR_NAME);
     }
   }, [role, isRegistering]);
 
@@ -47,9 +43,9 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
     const cleanPass = password.trim();
     const localUsers = getLocalUsers();
 
+    // Se estiver tentando registrar mas os dados baterem com um usuário local, loga direto
     const localMatch = localUsers.find(u => u.username === cleanUser && u.password === cleanPass);
-
-    if (!isRegistering && localMatch) {
+    if (localMatch) {
       onLogin(localMatch);
       setIsProcessing(false);
       return;
@@ -57,7 +53,6 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
 
     try {
       let allUsers = localUsers;
-      
       if (SyncService.isCloudReady()) {
         const cloudUsers = await SyncService.getUsers();
         if (cloudUsers && cloudUsers.length > 0) allUsers = cloudUsers;
@@ -88,11 +83,11 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
           localStorage.setItem(CACHE_KEY, JSON.stringify([...localUsers.filter(u => u.username !== user.username), user]));
           onLogin(user);
         } else {
-          setError('Usuário ou senha incorretos ou erro de conexão.');
+          setError('Usuário ou senha incorretos.');
         }
       }
     } catch (err) {
-      setError('Servidor instável. Tente novamente.');
+      setError('Erro de conexão. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
@@ -103,45 +98,34 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
       <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-200">
         <div className="flex flex-col items-center mb-6 text-center">
           <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-3xl mb-4 shadow-xl">
-            <i className="fa-solid fa-mobile-screen-button"></i>
+            <i className="fa-solid fa-lock"></i>
           </div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Gestão de HE FIPS</h2>
-          <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-200">
-            <div className={`w-2 h-2 rounded-full ${SyncService.isCloudReady() ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-            <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">
-              {SyncService.isCloudReady() ? 'Rede Ativa' : 'Modo Offline Ativo'}
-            </span>
-          </div>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
           {error === 'USER_EXISTS' ? (
-            <div className="bg-amber-50 text-amber-800 p-4 rounded-2xl border border-amber-200 text-center space-y-2">
-              <p className="text-[10px] font-black uppercase">Este usuário já possui cadastro!</p>
+            <div className="bg-amber-50 p-6 rounded-[2rem] border-2 border-amber-200 text-center space-y-3">
+              <i className="fa-solid fa-circle-exclamation text-amber-500 text-2xl"></i>
+              <p className="text-xs font-black text-amber-900 uppercase">Este usuário já possui cadastro!</p>
               <button 
                 type="button" 
                 onClick={() => { setIsRegistering(false); setError(''); }}
-                className="bg-amber-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest"
+                className="w-full bg-amber-600 text-white py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
               >
-                Tentar fazer Login
+                Ir para Tela de Login
               </button>
             </div>
           ) : error && (
             <div className="bg-red-50 text-red-700 p-4 rounded-xl text-[10px] font-bold border border-red-100 text-center">{error}</div>
           )}
           
-          {isRegistering && (
+          {isRegistering && error !== 'USER_EXISTS' && (
             <div className="space-y-3 mb-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase ml-1">Configurações de Perfil</p>
               <select 
                 className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" 
                 value={role} 
-                onChange={e => {
-                  const newRole = e.target.value as UserRole;
-                  setRole(newRole);
-                  setName('');
-                  setSelectedSup('');
-                }}
+                onChange={e => setRole(e.target.value as UserRole)}
               >
                 <option value="EMPLOYEE">Colaborador</option>
                 <option value="SUPERVISOR">Supervisor</option>
@@ -155,7 +139,13 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
                 </select>
               )}
 
-              <select required className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" value={name} onChange={e => setName(e.target.value)}>
+              <select 
+                required 
+                disabled={role === 'COORDINATOR'}
+                className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none disabled:bg-slate-100 disabled:text-slate-400" 
+                value={name} 
+                onChange={e => setName(e.target.value)}
+              >
                 <option value="">Seu Nome Oficial...</option>
                 {role === 'COORDINATOR' && <option value={COORDINATOR_NAME}>{COORDINATOR_NAME}</option>}
                 {role === 'SUPERVISOR' && SUPERVISORS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -164,22 +154,26 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onLogin }) => {
             </div>
           )}
 
-          <div className="space-y-3">
-            <input required disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuário (ex:ailton.souza)" />
-            <input required type="password" disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha" />
-          </div>
+          {error !== 'USER_EXISTS' && (
+            <>
+              <div className="space-y-3">
+                <input required disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuário (ex:ailton.souza)" />
+                <input required type="password" disabled={isProcessing} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha" />
+              </div>
 
-          <button type="submit" disabled={isProcessing} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] text-[11px] uppercase tracking-[0.2em] shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all mt-4">
-            {isProcessing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-right-to-bracket"></i>}
-            {isRegistering ? 'Finalizar Cadastro' : 'Acessar Sistema'}
-          </button>
+              <button type="submit" disabled={isProcessing} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] text-[11px] uppercase tracking-[0.2em] shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all mt-4">
+                {isProcessing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-right-to-bracket"></i>}
+                {isRegistering ? 'Criar Minha Conta' : 'Acessar App'}
+              </button>
+              
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-4">
+                {isRegistering ? 'Já tenho conta? Fazer Login' : 'Novo por aqui? Criar Cadastro'}
+              </button>
+            </>
+          )}
           
-          <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); setName(''); setUsername(''); setPassword(''); }} className="w-full text-[10px] text-blue-600 font-black uppercase tracking-widest mt-4">
-            {isRegistering ? 'Voltar para Login' : 'Não tem conta? Clique aqui para Criar'}
-          </button>
-          
-          <button type="button" onClick={() => { if(confirm('Limpar tudo?')) { localStorage.clear(); window.location.reload(); } }} className="w-full text-[9px] text-slate-300 font-bold uppercase mt-8 opacity-50">
-            Limpar Cache do Celular
+          <button type="button" onClick={() => { if(confirm('Limpar cache?')) { localStorage.clear(); window.location.reload(); } }} className="w-full text-[9px] text-slate-300 font-bold uppercase mt-8 opacity-50">
+            Resetar App
           </button>
         </form>
       </div>

@@ -19,9 +19,9 @@ const App: React.FC = () => {
   const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [googleSheetUrl, setGoogleSheetUrl] = useState(() => localStorage.getItem('google_sheet_url') || '');
-  const [syncInput, setSyncInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isTestingSheet, setIsTestingSheet] = useState(false);
 
   const mergeRecords = useCallback((cloudData: OvertimeRecord[], localData: OvertimeRecord[]) => {
     const map = new Map();
@@ -80,12 +80,11 @@ const App: React.FC = () => {
     };
 
     try {
-      // 1. Enviar para a Planilha Google (Modo Forms)
       if (googleSheetUrl) {
-        SyncService.pushToGoogleSheet(newRecord);
+        // Agora envia como Form Data
+        await SyncService.pushToGoogleSheet(newRecord);
       }
 
-      // 2. Fluxo Normal do App
       const latestCloud = await SyncService.getRecords();
       const currentList = latestCloud !== null ? latestCloud : records;
       const updatedList = mergeRecords(currentList, [newRecord, ...records]);
@@ -98,6 +97,7 @@ const App: React.FC = () => {
       alert("Registro enviado com sucesso!");
     } catch (err) {
       console.error(err);
+      alert("Erro ao salvar, mas os dados foram guardados localmente.");
     } finally {
       setIsSaving(false);
     }
@@ -139,7 +139,23 @@ const App: React.FC = () => {
   const saveGoogleConfig = () => {
     localStorage.setItem('google_sheet_url', googleSheetUrl);
     alert("Configuração de Planilha Salva!");
-    setShowSyncModal(false);
+  };
+
+  const handleTestSheet = async () => {
+    if (!googleSheetUrl) return alert("Insira uma URL primeiro.");
+    setIsTestingSheet(true);
+    const success = await SyncService.pushToGoogleSheet({ 
+      employee: "TESTE DE SISTEMA", 
+      supervisor: user?.name || "N/A",
+      reason: "Teste de conexão com o App FIPS",
+      location: "SANTOS",
+      durationMinutes: 60,
+      createdAt: Date.now() 
+    });
+    // Como é no-cors, o fetch não retorna erro mesmo que a URL esteja errada (ele é 'opaco').
+    // Mas o envio terá ocorrido se a URL estiver correta.
+    alert("Comando de envio executado. Verifique se apareceu uma nova linha na planilha agora.");
+    setIsTestingSheet(false);
   };
 
   if (!user) return <AuthSystem onLogin={u => { setUser(u); sessionStorage.setItem('logged_user', JSON.stringify(u)); }} />;
@@ -189,32 +205,44 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/95 z-[200] p-4 flex items-center justify-center backdrop-blur-xl">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Configurações Avançadas</h3>
+              <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest">Configurações</h3>
               <button onClick={() => setShowSyncModal(false)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
             </div>
             
             <div className="space-y-6">
               {(user.role === 'COORDINATOR' || user.role === 'SUPERVISOR') && (
-                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                  <label className="block text-[10px] font-black text-blue-600 uppercase mb-2">URL da Planilha Google (Apps Script)</label>
-                  <input 
-                    type="text" 
-                    value={googleSheetUrl} 
-                    onChange={e => setGoogleSheetUrl(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/..."
-                    className="w-full p-3 bg-white border border-blue-200 rounded-xl text-[10px] outline-none font-mono"
-                  />
-                  <button onClick={saveGoogleConfig} className="w-full mt-3 bg-blue-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase">Salvar Planilha</button>
+                <div className="p-5 bg-blue-50 rounded-[2rem] border border-blue-100 space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-blue-600 uppercase mb-2 ml-1">Integração Google Sheets</label>
+                    <input 
+                      type="text" 
+                      value={googleSheetUrl} 
+                      onChange={e => setGoogleSheetUrl(e.target.value)}
+                      placeholder="URL do Apps Script (Web App)..."
+                      className="w-full p-4 bg-white border border-blue-200 rounded-2xl text-[10px] outline-none font-mono focus:ring-2 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={saveGoogleConfig} className="bg-blue-600 text-white py-4 rounded-xl font-bold text-[10px] uppercase shadow-lg active:scale-95 transition-all">Salvar URL</button>
+                    <button 
+                      onClick={handleTestSheet} 
+                      disabled={isTestingSheet}
+                      className="bg-white border border-blue-200 text-blue-600 py-4 rounded-xl font-bold text-[10px] uppercase active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isTestingSheet ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-vial"></i>}
+                      Testar Agora
+                    </button>
+                  </div>
                 </div>
               )}
 
               <div className="space-y-3">
-                <p className="text-[9px] font-bold text-slate-400 uppercase">Backup Manual de Segurança</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase ml-1">Segurança</p>
                 <button onClick={() => {
                   const data = JSON.stringify({ records });
                   window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`📊 *BACKUP FIPS*\n\n${data}`)}`, '_blank');
-                }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2">
-                  <i className="fa-brands fa-whatsapp text-lg"></i> Exportar via WhatsApp
+                }} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-[10px] uppercase flex items-center justify-center gap-2 shadow-lg">
+                  <i className="fa-brands fa-whatsapp text-lg"></i> Backup WhatsApp
                 </button>
               </div>
             </div>
